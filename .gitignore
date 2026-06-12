@@ -1,0 +1,6 @@
+# root-anchored so fixture dirs (fixtures/ts-app/dist, fixtures/**/.env) stay tracked
+/node_modules
+/dist
+/coverage
+*.log
+.DS_Store
