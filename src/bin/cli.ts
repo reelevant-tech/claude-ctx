@@ -1,7 +1,10 @@
 import { run as commandsCmd } from '../cli/commands/commands-cmd'
+import { run as calls } from '../cli/commands/calls'
 import { run as deps } from '../cli/commands/deps'
 import { run as doctor } from '../cli/commands/doctor'
 import { run as embedSetup } from '../cli/commands/embed-setup'
+import { run as references } from '../cli/commands/references'
+import { run as symbolTree } from '../cli/commands/symbol-tree'
 import { run as indexCmd } from '../cli/commands/index-cmd'
 import { run as init } from '../cli/commands/init'
 import { run as install } from '../cli/commands/install'
@@ -26,6 +29,9 @@ const COMMANDS: Record<string, { run: Cmd; help: string }> = {
   symbols: { run: symbols, help: 'search symbols: ctx symbols <query> (--kind --exported --limit)' },
   related: { run: related, help: 'related files for a path: ctx related <path>' },
   deps: { run: deps, help: 'dependency trace: ctx deps <from> [to]' },
+  symbol_tree: { run: symbolTree, help: 'nested symbol tree of a file (AST)' },
+  calls: { run: calls, help: 'intra-file call expressions in a file (best-effort)' },
+  references: { run: references, help: 'name-based call sites of a symbol (best-effort)' },
   tests: { run: testsCmd, help: 'tests covering a path + how to run them' },
   recent: { run: recent, help: 'recently changed files (--days --limit)' },
   risky: { run: risky, help: 'risk classification for a path' },

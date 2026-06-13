@@ -1,10 +1,11 @@
 import { build } from 'esbuild'
-import { statSync } from 'node:fs'
+import { copyFileSync, mkdirSync, statSync } from 'node:fs'
+import { join } from 'node:path'
 
 // Three self-contained CJS bundles:
-//  - cli.js  : full CLI (embeds the `typescript` parser)
-//  - mcp.js  : MCP stdio server (embeds the parser, long-lived)
-//  - hook.js : hook hot-path — MUST stay slim and MUST NOT bundle `typescript`
+//  - cli.cjs  : full CLI (embeds the `typescript` parser + web-tree-sitter)
+//  - mcp.cjs  : MCP stdio server (embeds the parser, long-lived)
+//  - hook.cjs : hook hot-path — MUST stay slim; NO typescript / embed / ast / tree-sitter
 const common = {
   bundle: true,
   platform: 'node',
@@ -32,14 +33,37 @@ for (const b of builds) {
   if (b.outfile === 'dist/hook.cjs') hookMeta = result.metafile
 }
 
-// Hook bundle guard: the hook hot-path must never pull in the typescript parser
-// (8MB, ~1s parse cost) and must stay under 500KB so cold-start stays <500ms.
+// Ship tree-sitter WASM grammars next to the bundles (the loader finds them in
+// ./grammars relative to the running bundle).
+mkdirSync('dist/grammars', { recursive: true })
+const GRAMMARS = [
+  ['node_modules/web-tree-sitter/tree-sitter.wasm', 'tree-sitter.wasm'],
+  ['node_modules/tree-sitter-wasms/out/tree-sitter-rust.wasm', 'tree-sitter-rust.wasm'],
+  ['node_modules/tree-sitter-wasms/out/tree-sitter-typescript.wasm', 'tree-sitter-typescript.wasm'],
+  ['node_modules/tree-sitter-wasms/out/tree-sitter-tsx.wasm', 'tree-sitter-tsx.wasm'],
+  ['node_modules/tree-sitter-wasms/out/tree-sitter-javascript.wasm', 'tree-sitter-javascript.wasm'],
+]
+for (const [src, name] of GRAMMARS) {
+  try {
+    copyFileSync(src, join('dist/grammars', name))
+  } catch (e) {
+    console.error(`WARN: could not copy grammar ${src}: ${e.message}`)
+  }
+}
+
+// Hook bundle guard: the hook hot-path must never pull in the typescript parser,
+// the embeddings layer, or tree-sitter — and must stay under 500KB so cold-start
+// stays <500ms.
 const hookInputs = Object.keys(hookMeta.inputs)
 const offenders = hookInputs.filter(
-  (p) => p.includes('node_modules/typescript') || p.includes('embed/'),
+  (p) =>
+    p.includes('node_modules/typescript') ||
+    p.includes('src/core/embed/') ||
+    p.includes('src/core/ast/') ||
+    p.includes('web-tree-sitter'),
 )
 if (offenders.length > 0) {
-  console.error('FATAL: dist/hook.cjs pulls in a forbidden module (typescript/embed):', offenders.slice(0, 3))
+  console.error('FATAL: dist/hook.cjs pulls in a forbidden module (typescript/embed/ast):', offenders.slice(0, 3))
   process.exit(1)
 }
 const hookSize = statSync('dist/hook.cjs').size

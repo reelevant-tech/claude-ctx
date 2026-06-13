@@ -10,7 +10,7 @@ export async function run(argv: string[]): Promise<number> {
   const a = parseCommon(argv, { rules: { type: 'boolean' } })
   let idx = loadIndex(a.repo)
   if (!idx) {
-    buildIndex(a.repo, { mode: 'full' })
+    await buildIndex(a.repo, { mode: 'full' })
     idx = loadIndex(a.repo)
   }
   if (!idx) {

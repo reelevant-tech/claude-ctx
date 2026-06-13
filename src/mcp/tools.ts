@@ -4,6 +4,7 @@ import { basename } from 'node:path'
 import { z } from 'zod'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { loadConfig } from '../core/config'
+import { renderCalls, renderSymbolTree } from '../core/ast/render'
 import { buildVectors } from '../core/embed/build'
 import { semanticScores } from '../core/embed/query'
 import { buildIndex } from '../core/indexer/index'
@@ -16,12 +17,13 @@ import { loadState } from '../core/memory/state'
 import { summaryPath } from '../core/paths'
 import { buildPack } from '../core/router/pack'
 import { renderOverview, renderPack } from '../core/router/render'
-import { loadIndex, shardMtimeMs } from '../core/store/shards'
+import { loadIndex, loadShard, shardMtimeMs } from '../core/store/shards'
 import { estimateTokens } from '../core/tokens'
+import { findReferences } from '../cli/commands/references'
 import { relatedFiles } from '../cli/commands/related'
 import { bestTestCommand } from '../cli/commands/tests-cmd'
 import { searchSymbols } from '../cli/commands/symbols'
-import type { LoadedIndex, RepoSummary } from '../core/types'
+import type { CallsShard, LoadedIndex, RepoSummary, SymbolTreeShard } from '../core/types'
 
 export interface ToolContext {
   root: string
@@ -196,6 +198,34 @@ export const toolImpls: Record<string, ToolImpl> = {
     return lines.join('\n')
   },
 
+  symbol_tree(root, args) {
+    const shard = loadShard<SymbolTreeShard>(root, 'symtree')
+    if (!shard) return NO_INDEX
+    const path = String(args.path ?? '')
+    const tree = shard.trees[path]
+    if (!tree || tree.length === 0) return `No symbol tree for ${path} (parser: ${shard.parsers[path] ?? 'none'}).`
+    return `${path} (${shard.parsers[path] ?? 'none'}):\n${renderSymbolTree(tree)}`
+  },
+
+  calls(root, args) {
+    const shard = loadShard<CallsShard>(root, 'calls')
+    if (!shard) return NO_INDEX
+    const path = String(args.path ?? '')
+    return `Calls in ${path} (intra-file, best-effort):\n${renderCalls(shard.calls[path] ?? [])}`
+  },
+
+  references(root, args) {
+    const shard = loadShard<CallsShard>(root, 'calls')
+    if (!shard) return NO_INDEX
+    const symbol = String(args.symbol ?? '').trim()
+    if (!symbol) return 'Provide a symbol name.'
+    const refs = findReferences(shard, symbol)
+    if (refs.length === 0) return `No call sites found for "${symbol}" (name-based, intra-file calls only).`
+    const lines = [`Call sites of "${symbol}" (best-effort, name-based — verify before relying on it):`]
+    for (const r of refs) lines.push(`  ${r.file}:${r.line}${r.caller ? `  in ${r.caller}()` : ''}`)
+    return lines.join('\n')
+  },
+
   recent_changes(root, args) {
     const idx = getIndex(root)
     if (!idx) return NO_INDEX
@@ -260,7 +290,7 @@ export const toolImpls: Record<string, ToolImpl> = {
 
   async index_refresh(root, args) {
     const full = args.full === true
-    const stats = buildIndex(root, { mode: full ? 'full' : undefined })
+    const stats = await buildIndex(root, { mode: full ? 'full' : undefined })
     cache = null // invalidate
     const cfg = loadConfig(root)
     let embed = ''
@@ -292,6 +322,9 @@ export function createServer(ctx: ToolContext): McpServer {
   server.registerTool('symbol_search', { description: 'Find functions/classes/types/structs/traits by name. Prefer this over grep.', inputSchema: { query: z.string(), kind: z.string().optional(), exported_only: z.boolean().optional(), limit: z.number().optional() } }, wrap('symbol_search'))
   server.registerTool('related_files', { description: 'Files related to a path: imports, importers, co-changed, tests, siblings.', inputSchema: { path: z.string() } }, wrap('related_files'))
   server.registerTool('dep_trace', { description: 'Dependency path between two files, or fan-in/fan-out for one file.', inputSchema: { from: z.string(), to: z.string().optional() } }, wrap('dep_trace'))
+  server.registerTool('symbol_tree', { description: 'Nested symbol tree of a file (module/class/impl > methods) from the AST.', inputSchema: { path: z.string() } }, wrap('symbol_tree'))
+  server.registerTool('calls', { description: 'Intra-file call expressions in a file, grouped by caller (best-effort).', inputSchema: { path: z.string() } }, wrap('calls'))
+  server.registerTool('references', { description: 'Name-based call sites of a symbol across files (best-effort; verify before relying).', inputSchema: { symbol: z.string() } }, wrap('references'))
   server.registerTool('find_tests', { description: 'Tests covering a file and the command to run them.', inputSchema: { path: z.string() } }, wrap('find_tests'))
   server.registerTool('recent_changes', { description: 'Recently changed files and co-change clusters.', inputSchema: { days: z.number().optional(), limit: z.number().optional() } }, wrap('recent_changes'))
   server.registerTool('risk_check', { description: 'Risk classification for a path (generated/vendor/infra/secret).', inputSchema: { path: z.string() } }, wrap('risk_check'))

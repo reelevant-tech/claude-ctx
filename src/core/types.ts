@@ -37,6 +37,7 @@ export type ProjectType =
 
 export type SymbolKind =
   | 'fn'
+  | 'method'
   | 'class'
   | 'iface'
   | 'type'
@@ -201,6 +202,47 @@ export type ShardName =
   | 'commands'
   | 'pending'
   | 'vectors'
+  | 'symtree'
+  | 'calls'
+
+/** A node in a per-file symbol tree (nested: mod>impl>method, class>method, …). */
+export interface SymbolNode {
+  /** name */
+  n: string
+  k: SymbolKind
+  /** 1-based start line */
+  l: number
+  /** 1-based end line */
+  endL: number
+  /** exported / pub */
+  x: boolean
+  /** single-line declaration text, truncated to 120 chars */
+  sig: string
+  children?: SymbolNode[]
+}
+
+/** Per-file nested symbol trees (P0). Built via the TS compiler AST / tree-sitter. */
+export interface SymbolTreeShard {
+  /** repo-relative file -> top-level symbol nodes */
+  trees: Record<string, SymbolNode[]>
+  /** parser used per file, for transparency */
+  parsers: Record<string, 'ts-api' | 'tree-sitter' | 'none'>
+}
+
+/** A call expression observed inside a file (best-effort, intra-file). */
+export interface CallRef {
+  /** called function/method name (best-effort: trailing identifier of the callee) */
+  callee: string
+  /** 1-based line */
+  line: number
+  /** enclosing top-level/nested symbol name, if known */
+  caller?: string
+}
+
+/** Per-file intra-file call expressions (P1, best-effort). */
+export interface CallsShard {
+  calls: Record<string, CallRef[]>
+}
 
 /** Per-file semantic embeddings (optional layer). Vectors are L2-normalized so
  * cosine similarity = dot product. Each value is base64 of a Float32Array(dim). */

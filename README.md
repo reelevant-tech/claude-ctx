@@ -50,6 +50,9 @@ Global flags: `--repo <path>` (default cwd, resolved to the git root), `--json`.
 | `ctx symbols <q> [--kind --exported --limit]` | search symbols |
 | `ctx related <path>` | imports / importers / co-changed / tests / siblings |
 | `ctx deps <from> [to]` | dependency trace or fan-in/out |
+| `ctx symbol_tree <file>` | nested symbol tree (AST) |
+| `ctx calls <file>` | intra-file call expressions (best-effort) |
+| `ctx references <symbol>` | name-based call sites of a symbol (best-effort) |
 | `ctx tests <path>` | tests covering a file + how to run them |
 | `ctx recent [--days --limit]` | recently changed files |
 | `ctx risky <path>` | risk classification for a path |
@@ -61,7 +64,18 @@ Global flags: `--repo <path>` (default cwd, resolved to the git root), `--json`.
 
 ## MCP tools (`mcp__ctx__*`)
 
-`repo_overview` · `repo_tree` · `context_pack` · `symbol_search` · `related_files` · `dep_trace` · `find_tests` · `recent_changes` · `risk_check` · `session_summary` · `session_note` · `index_refresh`. Every result is token-capped and never throws.
+`repo_overview` · `repo_tree` · `context_pack` · `symbol_search` · `related_files` · `dep_trace` · `symbol_tree` · `calls` · `references` · `find_tests` · `recent_changes` · `risk_check` · `session_summary` · `session_note` · `index_refresh`. Every result is token-capped and never throws.
+
+## AST / symbol trees & calls (tree-sitter)
+
+Beyond the flat symbol list, the index builds a **nested symbol tree** per file (module → impl/class → methods) and best-effort **intra-file call expressions**:
+
+- **TypeScript/JS** via the TypeScript compiler AST; **Rust** via tree-sitter (web-tree-sitter, WASM grammars shipped next to the bundle — no native deps). Rust tree-sitter replaces the regex parser when available and falls back to it otherwise.
+- `ctx symbol_tree <file>` / `mcp__ctx__symbol_tree` — the nested tree with line spans and visibility.
+- `ctx calls <file>` / `mcp__ctx__calls` — call expressions grouped by their enclosing function (best-effort).
+- `ctx references <symbol>` / `mcp__ctx__references` — name-based call sites across files (best-effort; verify before relying on it — no overload/shadowing resolution).
+
+This is deliberately **not** a global call graph: cross-file call resolution in TS/Rust gets wrong/noisy fast, so references stays name-based and clearly labelled best-effort.
 
 ## Hybrid semantic retrieval (local, offline)
 

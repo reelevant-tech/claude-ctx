@@ -8,11 +8,11 @@ import { gitFixture } from '../helpers'
 
 let home: string
 let ROOT: string
-beforeEach(() => {
+beforeEach(async () => {
   home = mkdtempSync(join(tmpdir(), 'ctx-hooks-'))
   process.env.CLAUDE_CTX_HOME = home
   ROOT = gitFixture('ts-app')
-  buildIndex(ROOT, { mode: 'full' })
+  await buildIndex(ROOT, { mode: 'full' })
 })
 afterEach(() => {
   delete process.env.CLAUDE_CTX_HOME
@@ -96,7 +96,7 @@ describe('pre-bash (enforce mode via repo config)', () => {
       join(ROOT, '.claude-context', 'config.json'),
       JSON.stringify({ guard: { bash: 'enforce' } }),
     )
-    buildIndex(ROOT, { mode: 'full' })
+    await buildIndex(ROOT, { mode: 'full' })
     const h = await importHandlers()
     const out = await h.preBash({
       session_id: 'e1',

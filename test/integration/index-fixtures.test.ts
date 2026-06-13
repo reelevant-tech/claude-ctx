@@ -8,7 +8,7 @@ import { loadIndex } from '../../src/core/store/shards'
 const FIX = join(__dirname, '..', '..', 'fixtures')
 
 let home: string
-beforeEach(() => {
+beforeEach(async () => {
   home = mkdtempSync(join(tmpdir(), 'ctx-idx-'))
   process.env.CLAUDE_CTX_HOME = home
 })
@@ -18,9 +18,9 @@ afterEach(() => {
 })
 
 describe('ts-app', () => {
-  it('indexes a single TS app with secrets, generated, infra, and tsconfig paths', () => {
+  it('indexes a single TS app with secrets, generated, infra, and tsconfig paths', async () => {
     const root = join(FIX, 'ts-app')
-    const stats = buildIndex(root, { mode: 'full' })
+    const stats = await buildIndex(root, { mode: 'full' })
     expect(stats.mode).toBe('full')
     const idx = loadIndex(root)!
     expect(idx).not.toBeNull()
@@ -51,9 +51,9 @@ describe('ts-app', () => {
 })
 
 describe('ts-monorepo', () => {
-  it('resolves cross-package workspace imports', () => {
+  it('resolves cross-package workspace imports', async () => {
     const root = join(FIX, 'ts-monorepo')
-    buildIndex(root, { mode: 'full' })
+    await buildIndex(root, { mode: 'full' })
     const idx = loadIndex(root)!
     expect(idx.meta.projectType).toBe('ts-monorepo')
     expect(idx.graph.fwd['packages/b/src/index.ts']).toContain('packages/a/src/index.ts')
@@ -61,9 +61,9 @@ describe('ts-monorepo', () => {
 })
 
 describe('ts-multi', () => {
-  it('detects nested manifests with no root manifest', () => {
+  it('detects nested manifests with no root manifest', async () => {
     const root = join(FIX, 'ts-multi')
-    buildIndex(root, { mode: 'full' })
+    await buildIndex(root, { mode: 'full' })
     const idx = loadIndex(root)!
     expect(idx.meta.projectType).toBe('multi')
     expect(idx.meta.packages.length).toBe(2)
@@ -71,9 +71,9 @@ describe('ts-multi', () => {
 })
 
 describe('rust-single', () => {
-  it('extracts rust symbols, mod resolution, cfg(test) self-tests, bin entrypoint', () => {
+  it('extracts rust symbols, mod resolution, cfg(test) self-tests, bin entrypoint', async () => {
     const root = join(FIX, 'rust-single')
-    buildIndex(root, { mode: 'full' })
+    await buildIndex(root, { mode: 'full' })
     const idx = loadIndex(root)!
     expect(idx.meta.projectType).toBe('rust-crate')
     expect(idx.files.files['src/lib.rs']!.exports).toContain('evaluate')
@@ -87,9 +87,9 @@ describe('rust-single', () => {
 })
 
 describe('rust-workspace', () => {
-  it('resolves cross-crate imports with hyphen->underscore crate names', () => {
+  it('resolves cross-crate imports with hyphen->underscore crate names', async () => {
     const root = join(FIX, 'rust-workspace')
-    buildIndex(root, { mode: 'full' })
+    await buildIndex(root, { mode: 'full' })
     const idx = loadIndex(root)!
     expect(idx.meta.projectType).toBe('rust-workspace')
     expect(idx.graph.fwd['crates/cli/src/main.rs']).toContain('crates/core/src/lib.rs')
@@ -99,13 +99,13 @@ describe('rust-workspace', () => {
 })
 
 describe('incremental', () => {
-  it('re-parses only changed files and is a noop on a clean second run', () => {
+  it('re-parses only changed files and is a noop on a clean second run', async () => {
     const root = mkdtempSync(join(tmpdir(), 'ctx-inc-'))
     try {
       writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'inc', main: 'a.ts' }))
       writeFileSync(join(root, 'a.ts'), 'export function alpha() {}\n')
       writeFileSync(join(root, 'b.ts'), "import { alpha } from './a'\nexport function beta() {}\n")
-      const full = buildIndex(root, { mode: 'full' })
+      const full = await buildIndex(root, { mode: 'full' })
       expect(full.mode).toBe('full')
 
       // touch a.ts with a new export (bump mtime by rewriting)
@@ -114,13 +114,13 @@ describe('incremental', () => {
       const utimes = require('node:fs').utimesSync as typeof import('node:fs').utimesSync
       utimes(join(root, 'a.ts'), future, future)
 
-      const inc = buildIndex(root, { mode: 'incremental' })
+      const inc = await buildIndex(root, { mode: 'incremental' })
       expect(inc.mode).toBe('incremental')
       const idx = loadIndex(root)!
       expect(idx.files.files['a.ts']!.exports).toContain('gamma')
       expect(idx.files.files['b.ts']!.exports).toContain('beta')
 
-      const noop = buildIndex(root, { mode: 'incremental' })
+      const noop = await buildIndex(root, { mode: 'incremental' })
       expect(noop.mode).toBe('noop')
     } finally {
       rmSync(root, { recursive: true, force: true })

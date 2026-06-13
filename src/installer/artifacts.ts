@@ -1,4 +1,4 @@
-import { chmodSync, copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { dataDir } from '../core/paths'
 
@@ -21,6 +21,15 @@ export function installArtifacts(distDir: string): { binDir: string } {
   for (const f of ['cli.cjs', 'hook.cjs', 'mcp.cjs']) {
     const src = join(distDir, f)
     if (existsSync(src)) copyFileSync(src, join(binDir, f))
+  }
+  // tree-sitter WASM grammars (loaded by the AST layer relative to the bundle)
+  const grammarsSrc = join(distDir, 'grammars')
+  if (existsSync(grammarsSrc)) {
+    const grammarsDst = join(binDir, 'grammars')
+    mkdirSync(grammarsDst, { recursive: true })
+    for (const f of readdirSync(grammarsSrc)) {
+      if (f.endsWith('.wasm')) copyFileSync(join(grammarsSrc, f), join(grammarsDst, f))
+    }
   }
   const wrapper = join(binDir, 'ctx-hook')
   writeFileSync(wrapper, CTX_HOOK_SH)

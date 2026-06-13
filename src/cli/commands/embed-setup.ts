@@ -50,7 +50,7 @@ export async function run(argv: string[]): Promise<number> {
 
   if (!loadMeta(a.repo)) {
     out('No index yet — building it first…')
-    buildIndex(a.repo, { mode: 'full' })
+    await buildIndex(a.repo, { mode: 'full' })
   }
   out('Building embeddings (downloads the model on first run, then fully offline)…')
   const t0 = Date.now()

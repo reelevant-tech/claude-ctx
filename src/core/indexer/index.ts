@@ -10,6 +10,8 @@ import {
   saveShard,
 } from '../store/shards'
 import type {
+  CallRef,
+  CallsShard,
   CommandsShard,
   CtxConfig,
   FileRecord,
@@ -20,10 +22,14 @@ import type {
   IndexStats,
   PackageInfo,
   ParseResult,
+  SymbolNode,
   SymbolRecord,
   SymbolsShard,
+  SymbolTreeShard,
 } from '../types'
 import { repoId } from '../paths'
+import { extractRust } from '../ast/rust'
+import { extractTsTree } from '../ast/ts-tree'
 import { extractCommands } from './commands'
 import { assignPackage, detectProject } from './detect'
 import { buildGraph } from './graph'
@@ -41,6 +47,9 @@ interface ProcessedFile {
   rel: string
   record: FileRecord
   parse: ParseResult | null
+  tree?: SymbolNode[]
+  calls?: CallRef[]
+  treeParser?: 'ts-api' | 'tree-sitter'
 }
 
 const RUST_RESERVED = new Set(['crate', 'super', 'self', 'std', 'core', 'alloc', 'Self'])
@@ -65,13 +74,13 @@ function hash12(content: string): string {
   return createHash('sha1').update(content).digest('hex').slice(0, 12)
 }
 
-/** Build a single file record (+ parse result for edge collection). Never throws. */
-function processFile(
+/** Build a single file record (+ parse result, symbol tree, calls). Never throws. */
+async function processFile(
   root: string,
   sf: ScannedFile,
   cfg: CtxConfig,
   packages: PackageInfo[],
-): ProcessedFile | null {
+): Promise<ProcessedFile | null> {
   const rel = sf.rel
   const lang = detectLang(rel)
   const pkg = assignPackage(rel, packages)
@@ -119,6 +128,9 @@ function processFile(
   let parse: ParseResult | null = null
   let parser: FileRecord['parser'] = 'none'
   let defaultKind: FileRecord['kind'] = 'source'
+  let tree: SymbolNode[] | undefined
+  let calls: CallRef[] | undefined
+  let treeParser: 'ts-api' | 'tree-sitter' | undefined
   if (lang === 'ts' || lang === 'js') {
     try {
       parse = parseTs(content, rel)
@@ -127,9 +139,27 @@ function processFile(
       parse = parseLexical(content, lang)
       parser = 'lexical'
     }
+    try {
+      const t = extractTsTree(content, rel)
+      tree = t.tree
+      calls = t.calls
+      treeParser = 'ts-api'
+    } catch {
+      /* tree is best-effort */
+    }
   } else if (lang === 'rust') {
-    parse = parseRust(content)
-    parser = 'rust'
+    // prefer tree-sitter; fall back to the regex parser (fail-open)
+    const rx = await extractRust(content).catch(() => null)
+    if (rx) {
+      parse = rx.result
+      parser = 'rust'
+      tree = rx.tree
+      calls = rx.calls
+      treeParser = 'tree-sitter'
+    } else {
+      parse = parseRust(content)
+      parser = 'rust'
+    }
   } else if (lang === 'md') {
     parse = parseLexical(content, 'md')
     parser = 'lexical'
@@ -150,7 +180,11 @@ function processFile(
     // rust files with inline #[cfg(test)] test themselves
     if (lang === 'rust' && parse.hasCfgTest) rec.tests.push(rel)
   }
-  return { rel, record: rec, parse }
+  const pf: ProcessedFile = { rel, record: rec, parse }
+  if (tree) pf.tree = tree
+  if (calls) pf.calls = calls
+  if (treeParser) pf.treeParser = treeParser
+  return pf
 }
 
 /** Resolve imports for all files, populate fwd edges and externalDeps (mutates records). */
@@ -244,6 +278,8 @@ function writeShards(
   graph: GraphShard,
   git: GitShard,
   commands: CommandsShard,
+  symtree: SymbolTreeShard,
+  calls: CallsShard,
 ): void {
   // meta written LAST — its presence marks a usable index
   saveShard(root, 'files', files)
@@ -251,25 +287,27 @@ function writeShards(
   saveShard(root, 'graph', graph)
   saveShard(root, 'git', git)
   saveShard(root, 'commands', commands)
+  saveShard(root, 'symtree', symtree)
+  saveShard(root, 'calls', calls)
   saveShard(root, 'meta', meta)
   clearPending(root)
 }
 
-export function buildIndex(
+export async function buildIndex(
   root: string,
   opts?: { mode?: 'full' | 'incremental'; config?: CtxConfig },
-): IndexStats {
+): Promise<IndexStats> {
   const cfg = opts?.config ?? loadConfig(root)
   const existing = loadShard<IndexMeta>(root, 'meta')
   const wantIncremental = opts?.mode === 'incremental' || (opts?.mode === undefined && existing !== null)
   if (wantIncremental && existing) {
-    const inc = tryIncremental(root, cfg, existing)
+    const inc = await tryIncremental(root, cfg, existing)
     if (inc) return inc
   }
   return fullBuild(root, cfg)
 }
 
-function fullBuild(root: string, cfg: CtxConfig): IndexStats {
+async function fullBuild(root: string, cfg: CtxConfig): Promise<IndexStats> {
   const started = Date.now()
   if (!acquireLock(root)) {
     return { fileCount: 0, skippedCount: 0, symbolCount: 0, durationMs: 0, mode: 'noop' }
@@ -282,10 +320,13 @@ function fullBuild(root: string, cfg: CtxConfig): IndexStats {
     const parses = new Map<string, ParseResult>()
     const importsByFile = new Map<string, string[]>()
     const modDeclsByFile = new Map<string, string[]>()
+    const trees: Record<string, SymbolNode[]> = {}
+    const treeParsers: Record<string, 'ts-api' | 'tree-sitter' | 'none'> = {}
+    const callsByFile: Record<string, CallRef[]> = {}
     let skipped = scan.skippedCount
 
     for (const sf of scan.files) {
-      const pf = processFile(root, sf, cfg, packages)
+      const pf = await processFile(root, sf, cfg, packages)
       if (!pf) {
         skipped++
         continue
@@ -296,6 +337,11 @@ function fullBuild(root: string, cfg: CtxConfig): IndexStats {
         importsByFile.set(pf.rel, pf.parse.imports)
         if (pf.parse.modDecls) modDeclsByFile.set(pf.rel, pf.parse.modDecls)
       }
+      if (pf.tree) {
+        trees[pf.rel] = pf.tree
+        treeParsers[pf.rel] = pf.treeParser ?? 'none'
+      }
+      if (pf.calls && pf.calls.length > 0) callsByFile[pf.rel] = pf.calls
     }
 
     const fileSet = new Set(records.keys())
@@ -329,7 +375,7 @@ function fullBuild(root: string, cfg: CtxConfig): IndexStats {
     const hc = headCommit(root)
     if (hc) meta.headCommit = hc
 
-    writeShards(root, meta, filesShard, symbols, graph, git, commands)
+    writeShards(root, meta, filesShard, symbols, graph, git, commands, { trees, parsers: treeParsers }, { calls: callsByFile })
     return {
       fileCount: records.size,
       skippedCount: skipped,
@@ -342,7 +388,7 @@ function fullBuild(root: string, cfg: CtxConfig): IndexStats {
   }
 }
 
-function tryIncremental(root: string, cfg: CtxConfig, meta: IndexMeta): IndexStats | null {
+async function tryIncremental(root: string, cfg: CtxConfig, meta: IndexMeta): Promise<IndexStats | null> {
   const filesShard = loadShard<FilesShard>(root, 'files')
   if (!filesShard) return null
   const started = Date.now()
@@ -376,8 +422,10 @@ function tryIncremental(root: string, cfg: CtxConfig, meta: IndexMeta): IndexSta
     }
     const newParses = new Map<string, ParseResult>()
     const importsByFile = new Map<string, string[]>()
+    const newTrees = new Map<string, { tree: SymbolNode[]; parser: 'ts-api' | 'tree-sitter' | 'none' }>()
+    const newCalls = new Map<string, CallRef[]>()
     for (const sf of changed) {
-      const pf = processFile(root, sf, cfg, meta.packages)
+      const pf = await processFile(root, sf, cfg, meta.packages)
       if (!pf) {
         records.delete(sf.rel)
         continue
@@ -387,6 +435,8 @@ function tryIncremental(root: string, cfg: CtxConfig, meta: IndexMeta): IndexSta
         newParses.set(pf.rel, pf.parse)
         importsByFile.set(pf.rel, pf.parse.imports)
       }
+      if (pf.tree) newTrees.set(pf.rel, { tree: pf.tree, parser: pf.treeParser ?? 'none' })
+      newCalls.set(pf.rel, pf.calls ?? [])
     }
 
     const fileSet = new Set(records.keys())
@@ -474,8 +524,30 @@ function tryIncremental(root: string, cfg: CtxConfig, meta: IndexMeta): IndexSta
     else delete newMeta.headCommit
     delete newMeta.partial
 
+    // Patch symtree/calls: keep entries for surviving files, replace changed ones.
+    const oldSymtree = loadShard<SymbolTreeShard>(root, 'symtree') ?? { trees: {}, parsers: {} }
+    const oldCalls = loadShard<CallsShard>(root, 'calls') ?? { calls: {} }
+    const trees: Record<string, SymbolNode[]> = {}
+    const treeParsers: Record<string, 'ts-api' | 'tree-sitter' | 'none'> = {}
+    const callsByFile: Record<string, CallRef[]> = {}
+    for (const rel of records.keys()) {
+      if (newTrees.has(rel)) {
+        trees[rel] = newTrees.get(rel)!.tree
+        treeParsers[rel] = newTrees.get(rel)!.parser
+      } else if (oldSymtree.trees[rel]) {
+        trees[rel] = oldSymtree.trees[rel]!
+        treeParsers[rel] = oldSymtree.parsers[rel] ?? 'none'
+      }
+      if (newCalls.has(rel)) {
+        const c = newCalls.get(rel)!
+        if (c.length > 0) callsByFile[rel] = c
+      } else if (oldCalls.calls[rel]) {
+        callsByFile[rel] = oldCalls.calls[rel]!
+      }
+    }
+
     const commands = extractCommands(root, meta.packages)
-    writeShards(root, newMeta, { files: filesObj }, symbols, graph, git, commands)
+    writeShards(root, newMeta, { files: filesObj }, symbols, graph, git, commands, { trees, parsers: treeParsers }, { calls: callsByFile })
     return {
       fileCount: records.size,
       skippedCount: scan.skippedCount,
