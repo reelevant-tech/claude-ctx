@@ -23,6 +23,7 @@ export const DEFAULT_CONFIG: CtxConfig = {
   bgIndexThresholdFiles: 2000,
   mcpMaxResultTokens: 2000,
   cochangeCommits: 1000,
+  tokenAliases: {},
   embeddings: {
     enabled: true,
     model: 'Xenova/all-MiniLM-L6-v2',

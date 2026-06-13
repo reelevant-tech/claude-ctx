@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { estimateTokens, splitIdentifier, tokenizeTask } from '../tokens'
+import { estimateTokens, expandTaskTokens, splitIdentifier, tokenizeTask } from '../tokens'
 import type { ContextPack, LoadedIndex, PackExcerpt, PackFile, ScoredFile, SessionState, SymbolRecord } from '../types'
 import { renderPack } from './render'
 import { scoreFiles } from './score'
@@ -17,6 +17,8 @@ export interface PackOptions {
   semanticSymbols?: Map<string, string>
   /** hybrid fusion weight (default 0.5) */
   semWeight?: number
+  /** per-repo query-token aliases, merged over the built-in FR→EN/synonym map */
+  aliases?: Record<string, string[]>
 }
 
 const MATCH_RE = /^matches '([^']+)'/
@@ -53,7 +55,7 @@ export function buildPack(
   state: SessionState | null,
   opts: PackOptions,
 ): ContextPack {
-  const tokens = tokenizeTask(task)
+  const tokens = expandTaskTokens(tokenizeTask(task), opts.aliases)
   const scored = scoreFiles(tokens, idx, state, opts.nowSec, opts.semantic, opts.semWeight, opts.semanticSymbols)
   const tokenSet = new Set(tokens.map((t) => t.t))
   const top = scored[0]

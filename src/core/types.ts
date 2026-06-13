@@ -388,6 +388,9 @@ export interface CtxConfig {
   mcpMaxResultTokens: number
   /** how many commits `git log` analyzes for signals */
   cochangeCommits: number
+  /** per-repo query-token aliases (folded lowercase key -> alias terms), merged
+   * over the built-in FR→EN/synonym map. Use for domain jargon (binding→dependency). */
+  tokenAliases?: Record<string, string[]>
   /** optional local-embeddings (offline semantic retrieval) layer */
   embeddings: {
     enabled: boolean

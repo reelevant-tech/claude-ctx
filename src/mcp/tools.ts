@@ -109,6 +109,7 @@ export const toolImpls: Record<string, ToolImpl> = {
       semantic: sem?.scores,
       semanticSymbols: sem?.symbols,
       semWeight: cfg.embeddings.weight,
+      aliases: cfg.tokenAliases,
     })
     return renderPack(pack)
   },

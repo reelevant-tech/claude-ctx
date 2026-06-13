@@ -29,6 +29,7 @@ export async function run(argv: string[]): Promise<number> {
     semantic: sem?.scores,
     semanticSymbols: sem?.symbols,
     semWeight: cfg.embeddings.weight,
+    aliases: cfg.tokenAliases,
   })
   out(a.json ? JSON.stringify(pack, null, 2) : renderPack(pack))
   return 0

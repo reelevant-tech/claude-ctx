@@ -83,12 +83,13 @@ export async function run(argv: string[]): Promise<number> {
     const cfg = loadConfig(root)
     const sem = await semanticScores(root, q.query, cfg)
 
-    const lexPack = buildPack(q.query, idx, null, { budget: 4000 })
+    const lexPack = buildPack(q.query, idx, null, { budget: 4000, aliases: cfg.tokenAliases })
     const hybPack = buildPack(q.query, idx, null, {
       budget: 4000,
       semantic: sem?.scores,
       semanticSymbols: sem?.symbols,
       semWeight: cfg.embeddings.weight,
+      aliases: cfg.tokenAliases,
     })
     const lexPaths = lexPack.files.map((f) => f.path).slice(0, k)
     const hybPaths = hybPack.files.map((f) => f.path).slice(0, k)

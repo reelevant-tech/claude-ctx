@@ -1,0 +1,51 @@
+import { describe, expect, it } from 'vitest'
+import { ALIAS_WEIGHT, expandTaskTokens, foldAccents, tokenizeTask } from '../../src/core/tokens'
+
+describe('foldAccents', () => {
+  it('strips French diacritics', () => {
+    expect(foldAccents('données')).toBe('donnees')
+    expect(foldAccents('exécution')).toBe('execution')
+    expect(foldAccents('réseau')).toBe('reseau')
+  })
+})
+
+describe('tokenizeTask with accent folding', () => {
+  it('keeps accented words as whole clean tokens (not split on the accent)', () => {
+    const toks = tokenizeTask('exécution du workflow').map((t) => t.t)
+    expect(toks).toContain('execution') // not "cution"
+    expect(toks).toContain('workflow')
+    expect(toks).not.toContain('cution')
+  })
+  it('"base de données" yields a clean donnees token', () => {
+    const toks = tokenizeTask('base de données').map((t) => t.t)
+    expect(toks.some((t) => t.startsWith('donnee'))).toBe(true)
+    expect(toks).not.toContain('donn')
+  })
+})
+
+describe('expandTaskTokens', () => {
+  it('adds FR→EN aliases at reduced weight, keeps originals at full weight', () => {
+    const base = tokenizeTask('connexion à la base de données')
+    const exp = expandTaskTokens(base)
+    const m = new Map(exp.map((t) => [t.t, t.q]))
+    expect(m.has('database')).toBe(true)
+    expect(m.has('connection')).toBe(true)
+    // alias weight is below the original token weight
+    expect(m.get('database')!).toBeCloseTo(1 * ALIAS_WEIGHT, 5)
+    const donnees = exp.find((t) => t.t.startsWith('donnee'))!
+    expect(donnees.q).toBe(1) // original keeps full weight
+  })
+
+  it('supports per-repo extra aliases for domain jargon', () => {
+    const base = tokenizeTask('binding dynamique')
+    const exp = expandTaskTokens(base, { binding: ['dependency', 'dependencies'] })
+    const toks = exp.map((t) => t.t)
+    expect(toks).toContain('dependency')
+    expect(toks).toContain('dependencies')
+  })
+
+  it('is a no-op for tokens with no alias', () => {
+    const base = tokenizeTask('fix invoice rounding')
+    expect(expandTaskTokens(base)).toEqual(base)
+  })
+})

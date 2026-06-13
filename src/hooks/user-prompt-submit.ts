@@ -34,6 +34,7 @@ export async function handle(input: HookInput): Promise<HookOutput> {
     withExcerpts: true,
     root,
     redact: redactSecrets,
+    aliases: cfg.tokenAliases,
   })
   if (pack.files.length === 0) return {}
   return {
