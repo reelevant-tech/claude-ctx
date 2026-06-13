@@ -256,7 +256,7 @@ describe('renderOverview', () => {
   it('shrinks tree then drops commands under a tight budget', () => {
     const out = renderOverview(idx, summary, 110)
     expect(estimateTokens(out)).toBeLessThanOrEqual(110)
-    expect(out).toContain('mcp__ctx__context_pack')
+    expect(out).toContain('mcp__ctx__')
     expect(out).not.toContain('**Tree:**')
     expect(out).not.toContain('**Commands:**')
   })

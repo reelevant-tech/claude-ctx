@@ -1,0 +1,19 @@
+Datasource repo
+Q1: Pour un datasource worker en KEEP_PREVIOUS_DATA, decrire le cycle complet quand une nouvelle version passe de SCHEDULED a LIVE alors qu'un job live_* de l'ancienne version est encore actif: quels jobs Bull sont enfiles (IDs, ordre), quelles mutations Pinot (physical table, logical table, time boundary, segments) ont lieu a chaque etape, quels garde-fous empechent une fenetre ou la logical table pointe vers une physical table vide ou inexistante, et quels fichiers/fonctions implementent chaque garde-fou. Citer les tests e2e qui couvrent ces cas et ce qu'ils assertent exactement.
+Q2: Quels garde-fous empechent qu'un job worker LIVE (live_{datasourceId}) bascule la logical table Pinot vers une physical table pas encore queryable? Ou est le rollback si le job crash apres le switch? Quels tests e2e couvrent ca?
+Wrkflow repo
+Q3: Trace the full lifecycle of AutomaticIndexResolving in this repo: from symbol declaration in the SDK/builder, through analyze precomputation at publish time, Redis cache storage, to runtime resolution in the engine. Answer with:
+the ordered list of files/functions in the chain (and each one's role)
+which WorkflowAnalyze fields are required at runtime vs which are explicitly stripped from the Redis cache (and why)
+what happens if entrypointsPerDataNodeId[dataNodeId] does not contain the current entrypoint (what index is returned?)
+the exact difference from AutomaticMapping at the engine level (same file or not?)"
+Q4: Describe the exact order of operations in publish(): io-ts validation, executor create/update/delete hooks, analyze computation, complexity score. Which nodes trigger hooks and in what priority order (prioritySorter)?
+Q5: When a content node has ids: [nodeA, nodeB] in a dependency (multi-ids), how does the engine pick which data node to use? Which contexts.internal field tracks the executed branch?
+
+
+Q   with        without
+Q1  instant     120s
+Q2  instant     90s
+Q3  instant     60s
+Q4  instant     20s
+Q5  10s         60s

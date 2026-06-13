@@ -1,8 +1,9 @@
 import { basename } from 'node:path'
 import { estimateTokens } from '../tokens'
+import { MCP_AGENT_RULE } from '../mcp-rules'
 import type { ContextPack, LoadedIndex, RepoSummary } from '../types'
 
-const MORE_LINE = '_More: mcp__ctx__context_pack, symbol_search, related_files, dep_trace_'
+const MORE_LINE = '_More: mcp__ctx__context_pack, symbol_search, trace_symbol, references, related_files, dep_trace_'
 
 export function renderPack(pack: ContextPack): string {
   const lines: string[] = []
@@ -38,9 +39,10 @@ export function renderPack(pack: ContextPack): string {
 
 const RULES_DIGEST = [
   '**Rules:**',
+  `- ${MCP_AGENT_RULE}`,
   '- Start from the injected context / this map — do NOT grep the repo or read files one-by-one to rediscover structure.',
-  '- Call mcp__ctx__context_pack with your task before multi-file work; expand with related_files / dep_trace.',
-  '- Prefer mcp__ctx__symbol_search over repo-wide grep.',
+  '- Invoke mcp__ctx__context_pack (agent tool) before multi-file work; expand with trace_symbol / references / related_files.',
+  '- Prefer mcp__ctx__symbol_search over repo-wide grep; follow with mcp__ctx__trace_symbol or mcp__ctx__references.',
   '- Check related tests before editing (mcp__ctx__find_tests).',
   '- Avoid generated/vendor paths; record decisions with mcp__ctx__session_note.',
 ]
@@ -63,7 +65,17 @@ export function renderOverview(
       const t = last.task.length > 120 ? `${last.task.slice(0, 117)}...` : last.task
       lines.push(`**Last session:** ${t}`)
     }
-    while (estimateTokens(lines.join('\n')) > limit && lines.length > 1) lines.pop()
+    while (estimateTokens(lines.join('\n')) > limit && lines.length > 1) {
+      const hasSession = lines[lines.length - 1]?.startsWith('**Last session:**') ?? false
+      const droppableEnd = hasSession ? lines.length - 1 : lines.length
+      let dropped = false
+      for (let i = droppableEnd - 1; i >= 3; i--) {
+        lines.splice(i, 1)
+        dropped = true
+        break
+      }
+      if (!dropped) lines.pop()
+    }
     return lines.join('\n')
   }
 

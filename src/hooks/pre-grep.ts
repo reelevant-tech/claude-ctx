@@ -17,7 +17,7 @@ export async function handle(input: HookInput): Promise<HookOutput> {
   return {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
-      additionalContext: `[claude-ctx] Indexed repo — consider mcp__ctx__symbol_search("${p}") or mcp__ctx__related_files instead of a repo-wide search.`,
+      additionalContext: `[claude-ctx] Indexed repo — consider mcp__ctx__symbol_search("${p}"), mcp__ctx__trace_symbol, or mcp__ctx__references instead of a repo-wide search.`,
     },
   }
 }

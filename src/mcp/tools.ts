@@ -19,7 +19,9 @@ import { buildPack } from '../core/router/pack'
 import { renderOverview, renderPack } from '../core/router/render'
 import { loadIndex, loadShard, shardMtimeMs } from '../core/store/shards'
 import { estimateTokens } from '../core/tokens'
-import { findReferences } from '../cli/commands/references'
+import { clearTsRefsCache } from '../core/ast/ts-refs'
+import { renderReferences, resolveReferences } from '../cli/commands/references'
+import { renderTraceSymbol, traceSymbol } from '../core/trace/symbol'
 import { relatedFiles } from '../cli/commands/related'
 import { bestTestCommand } from '../cli/commands/tests-cmd'
 import { searchSymbols } from '../cli/commands/symbols'
@@ -217,15 +219,26 @@ export const toolImpls: Record<string, ToolImpl> = {
   },
 
   references(root, args) {
+    const idx = getIndex(root)
     const shard = loadShard<CallsShard>(root, 'calls')
-    if (!shard) return NO_INDEX
+    if (!idx && !shard) return NO_INDEX
     const symbol = String(args.symbol ?? '').trim()
     if (!symbol) return 'Provide a symbol name.'
-    const refs = findReferences(shard, symbol)
-    if (refs.length === 0) return `No call sites found for "${symbol}" (name-based, intra-file calls only).`
-    const lines = [`Call sites of "${symbol}" (best-effort, name-based — verify before relying on it):`]
-    for (const r of refs) lines.push(`  ${r.file}:${r.line}${r.caller ? `  in ${r.caller}()` : ''}`)
-    return lines.join('\n')
+    const file = typeof args.file === 'string' ? args.file : undefined
+    const result = resolveReferences(root, idx, shard, symbol, { file })
+    return renderReferences(symbol, result)
+  },
+
+  trace_symbol(root, args) {
+    const idx = getIndex(root)
+    if (!idx) return NO_INDEX
+    const symbol = String(args.symbol ?? '').trim()
+    if (!symbol) return 'Provide a symbol name.'
+    const file = typeof args.file === 'string' ? args.file : undefined
+    const depth = typeof args.depth === 'number' ? args.depth : undefined
+    const trace = traceSymbol(root, idx, symbol, { file, depth })
+    if (!trace) return `Could not trace "${symbol}".`
+    return renderTraceSymbol(root, trace)
   },
 
   recent_changes(root, args) {
@@ -294,6 +307,7 @@ export const toolImpls: Record<string, ToolImpl> = {
     const full = args.full === true
     const stats = await buildIndex(root, { mode: full ? 'full' : undefined })
     cache = null // invalidate
+    clearTsRefsCache()
     const cfg = loadConfig(root)
     let embed = ''
     if (cfg.embeddings.enabled) {
@@ -326,7 +340,8 @@ export function createServer(ctx: ToolContext): McpServer {
   server.registerTool('dep_trace', { description: 'Dependency path between two files, or fan-in/fan-out for one file.', inputSchema: { from: z.string(), to: z.string().optional() } }, wrap('dep_trace'))
   server.registerTool('symbol_tree', { description: 'Nested symbol tree of a file (module/class/impl > methods) from the AST.', inputSchema: { path: z.string() } }, wrap('symbol_tree'))
   server.registerTool('calls', { description: 'Intra-file call expressions in a file, grouped by caller (best-effort).', inputSchema: { path: z.string() } }, wrap('calls'))
-  server.registerTool('references', { description: 'Name-based call sites of a symbol across files (best-effort; verify before relying).', inputSchema: { symbol: z.string() } }, wrap('references'))
+  server.registerTool('references', { description: 'Find all references to a symbol (TypeScript-aware when possible; name-based fallback).', inputSchema: { symbol: z.string(), file: z.string().optional() } }, wrap('references'))
+  server.registerTool('trace_symbol', { description: 'Trace a symbol end-to-end: definition, references, callees, import paths, related files.', inputSchema: { symbol: z.string(), file: z.string().optional(), depth: z.number().optional() } }, wrap('trace_symbol'))
   server.registerTool('find_tests', { description: 'Tests covering a file and the command to run them.', inputSchema: { path: z.string() } }, wrap('find_tests'))
   server.registerTool('recent_changes', { description: 'Recently changed files and co-change clusters.', inputSchema: { days: z.number().optional(), limit: z.number().optional() } }, wrap('recent_changes'))
   server.registerTool('risk_check', { description: 'Risk classification for a path (generated/vendor/infra/secret).', inputSchema: { path: z.string() } }, wrap('risk_check'))

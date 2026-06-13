@@ -44,6 +44,7 @@ import { buildResolverContext, resolveImport } from './resolve'
 import { classifyRisk, INFRA_GLOBS, SECRET_GLOBS } from './risk'
 import { detectLang, isBinaryBuffer, scanRepo, type ScannedFile } from './scan'
 import { mapTests } from './tests'
+import { cliJsPath, respawnIfPending } from './spawn'
 import { buildTreeSummary } from './tree'
 
 interface ProcessedFile {
@@ -407,6 +408,7 @@ async function fullBuild(root: string, cfg: CtxConfig): Promise<IndexStats> {
     }
   } finally {
     releaseLock(root)
+    respawnIfPending(root, cliJsPath())
   }
 }
 
@@ -582,6 +584,7 @@ async function tryIncremental(root: string, cfg: CtxConfig, meta: IndexMeta): Pr
     }
   } finally {
     releaseLock(root)
+    respawnIfPending(root, cliJsPath())
   }
 }
 

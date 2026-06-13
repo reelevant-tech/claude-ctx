@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { buildHookEntries, MARKER, mergeHooks, removeHooks } from '../../src/installer/settings-merge'
+import {
+  buildHookEntries,
+  MARKER,
+  MCP_PERMISSION_ALLOW,
+  mergeHooks,
+  removeHooks,
+} from '../../src/installer/settings-merge'
 
 const HOOK = '"$HOME"/.claude-ctx/bin/ctx-hook'
 
@@ -18,12 +24,19 @@ const REAL = JSON.stringify(
 )
 
 describe('mergeHooks', () => {
-  it('preserves every non-hooks key unchanged', () => {
+  it('preserves every non-hooks key unchanged (except permissions.allow gains MCP entry)', () => {
     const merged = JSON.parse(mergeHooks(REAL, HOOK))
     const orig = JSON.parse(REAL)
     for (const k of Object.keys(orig)) {
+      if (k === 'permissions') continue
       expect(merged[k]).toEqual(orig[k])
     }
+    expect(merged.permissions.allow).toEqual([...orig.permissions.allow, MCP_PERMISSION_ALLOW])
+  })
+
+  it('adds mcp__ctx__* to permissions.allow when permissions is missing', () => {
+    const merged = JSON.parse(mergeHooks('{}', HOOK))
+    expect(merged.permissions.allow).toEqual([MCP_PERMISSION_ALLOW])
   })
 
   it('adds all 6 claude-ctx event groups', () => {

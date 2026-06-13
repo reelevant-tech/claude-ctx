@@ -25,7 +25,7 @@ export async function run(argv: string[]): Promise<number> {
   const checks: Check[] = []
   const bin = join(dataDir(), 'bin')
 
-  const bundles = ['cli.cjs', 'hook.cjs', 'mcp.cjs', 'ctx-hook']
+  const bundles = ['cli.cjs', 'hook.cjs', 'mcp.cjs', 'ctx-hook', 'ctx']
   const missing = bundles.filter((f) => !existsSync(join(bin, f)))
   checks.push({
     name: 'bundles installed',

@@ -1,9 +1,11 @@
 import { loadConfig } from '../core/config'
+import { broadDiscoveryVerdict } from '../core/guard/bash'
 import { appendEvent } from '../core/memory/log'
 import { bumpRead, loadState, markRelatedShown, recordEdit, recordIndexQuery } from '../core/memory/state'
 import { findRepoRoot, toRepoRelative } from '../core/paths'
+import { requestIndexRefresh, cliJsPath } from '../core/indexer/spawn'
 import { relatedFiles } from '../core/related'
-import { appendPending, loadShard } from '../core/store/shards'
+import { appendPending, loadMeta, loadShard } from '../core/store/shards'
 import type { FilesShard, GitShard, GraphShard, HookInput, HookOutput } from '../core/types'
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
@@ -27,7 +29,19 @@ function relatedContext(root: string, sid: string, rel: string): string | null {
   add('co-changed', g.coChanged)
   if (parts.length === 0) return null
   markRelatedShown(root, sid, rel)
-  return `[claude-ctx] Related to ${rel} — ${parts.join('; ')}. Prefer these (and mcp__ctx__related_files / dep_trace) over grepping or reading files one-by-one.`
+  return `[claude-ctx] Related to ${rel} — ${parts.join('; ')}. Prefer mcp__ctx__trace_symbol / references / related_files over grepping or reading files one-by-one.`
+}
+
+function discoveryNudge(root: string, command: string): string | null {
+  const meta = loadMeta(root)
+  const verdict = broadDiscoveryVerdict(command, {
+    repoRoot: root,
+    secretGlobs: meta?.secretGlobs ?? [],
+    riskyGlobs: meta?.riskyGlobs ?? [],
+  })
+  if (!verdict) return null
+  const hint = verdict.suggestion ? ` ${verdict.suggestion}` : ''
+  return `[claude-ctx] Shell discovery (${verdict.rule}: ${verdict.reason}) — the repo is indexed.${hint}`
 }
 
 export async function handle(input: HookInput): Promise<HookOutput> {
@@ -65,10 +79,17 @@ export async function handle(input: HookInput): Promise<HookOutput> {
         recordEdit(root, sid, rel)
         appendEvent(root, sid, { ts: now, e: 'edit', f: rel, tool })
         appendPending(root, [rel])
+        requestIndexRefresh(root, cliJsPath())
       }
     } else if (tool === 'Bash') {
       const cmd = String(ti.command ?? '')
-      if (cmd) appendEvent(root, sid, { ts: now, e: 'bash', cmd: cmd.slice(0, 200) })
+      if (cmd) {
+        appendEvent(root, sid, { ts: now, e: 'bash', cmd: cmd.slice(0, 200) })
+        const nudge = discoveryNudge(root, cmd)
+        if (nudge) {
+          return { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: nudge } }
+        }
+      }
     }
   } catch {
     /* memory is best-effort */

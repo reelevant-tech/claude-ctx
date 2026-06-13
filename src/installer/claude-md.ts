@@ -1,15 +1,17 @@
 import { basename } from 'node:path'
 import type { LoadedIndex } from '../core/types'
+import { MCP_AGENT_RULE } from '../core/mcp-rules'
 
 export const BEGIN = '<!-- claude-ctx:begin v1 -->'
 export const END = '<!-- claude-ctx:end -->'
 
 const RULES = [
-  '- Consult this map before exploring; call `mcp__ctx__context_pack` with your task before multi-file work.',
-  '- Prefer `mcp__ctx__symbol_search` / `mcp__ctx__related_files` over repo-wide grep.',
+  `- ${MCP_AGENT_RULE}`,
+  '- Invoke mcp__ctx__context_pack (agent tool) with your task before multi-file work.',
+  '- Prefer mcp__ctx__symbol_search over repo-wide grep; follow with mcp__ctx__trace_symbol or mcp__ctx__references.',
   '- Check related tests before editing with `mcp__ctx__find_tests`.',
   '- Never edit generated/vendor files; confirm with the user before changing infra/prod-sensitive files.',
-  '- Use `mcp__ctx__dep_trace` to understand dependencies before refactoring.',
+  '- Use `mcp__ctx__trace_symbol` to map definition, references, and callees before refactoring.',
   '- Record decisions and next steps with `mcp__ctx__session_note`.',
 ]
 

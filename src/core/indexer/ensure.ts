@@ -4,11 +4,12 @@
  * is delegated to the cli bundle via spawn. The esbuild hook-bundle guard
  * enforces this. Never throws.
  */
-import { execFileSync, spawn, spawnSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { loadConfig } from '../config'
 import { isLocked } from '../store/lock'
-import { loadShard, saveShard } from '../store/shards'
+import { loadPending, loadShard, saveShard } from '../store/shards'
+import { spawnIndexBuild } from './spawn'
 import type { CtxConfig, EnsureIndexResult, GitShard, IndexMeta } from '../types'
 import { statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -19,6 +20,7 @@ const STALE_PROBE_COUNT = 30
 /** Cheap staleness probe: have any recently-indexed files changed since indexedAt? */
 function looksFresh(root: string, meta: IndexMeta): boolean {
   if (meta.partial) return false
+  if (loadPending(root).dirty.length > 0) return false
   const probe: string[] = []
   const git = loadShard<GitShard>(root, 'git')
   if (git) for (const r of git.recent) probe.push(r.f)
@@ -62,16 +64,6 @@ function quickCount(root: string, cfg: CtxConfig): number {
   return cfg.bgIndexThresholdFiles + 1
 }
 
-function spawnBuild(cliJs: string, root: string, full: boolean): void {
-  try {
-    const args = [cliJs, 'index', '--repo', root]
-    if (full) args.push('--full')
-    spawn(process.execPath, args, { detached: true, stdio: 'ignore' }).unref()
-  } catch {
-    /* fail open */
-  }
-}
-
 export function ensureIndex(
   root: string,
   opts: { cliJs: string; waitForSmall?: boolean; config?: CtxConfig },
@@ -87,7 +79,7 @@ export function ensureIndex(
 
     // Stale but present: refresh in background, current index still usable.
     if (meta) {
-      spawnBuild(opts.cliJs, root, false)
+      spawnIndexBuild(root, opts.cliJs)
       return { status: 'fresh' }
     }
 
@@ -128,7 +120,7 @@ export function ensureIndex(
     } catch {
       /* ignore */
     }
-    spawnBuild(opts.cliJs, root, true)
+    spawnIndexBuild(root, opts.cliJs, { full: true })
     return { status: 'building' }
   } catch {
     return { status: 'missing' }

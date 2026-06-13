@@ -1,15 +1,11 @@
 import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
 import { loadConfig } from '../core/config'
 import { ensureIndex } from '../core/indexer/ensure'
+import { cliJsPath } from '../core/indexer/spawn'
 import { findRepoRoot, summaryPath } from '../core/paths'
 import { renderOverview } from '../core/router/render'
 import { loadIndex } from '../core/store/shards'
 import type { HookInput, HookOutput, RepoSummary } from '../core/types'
-
-function cliJsPath(): string {
-  return join(dirname(process.argv[1] ?? ''), 'cli.cjs')
-}
 
 function loadSummary(root: string): RepoSummary | null {
   try {

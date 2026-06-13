@@ -4,6 +4,7 @@
  * Identity of our entries = any nested hook command contains MARKER.
  */
 export const MARKER = '/.claude-ctx/'
+export const MCP_PERMISSION_ALLOW = 'mcp__ctx__*'
 
 interface HookCmd {
   type: string
@@ -64,7 +65,27 @@ function isOurs(group: unknown): boolean {
   )
 }
 
-/** Merge our hooks in; preserve every other key, order, and the user's own hook entries. */
+function mergePermissions(obj: Record<string, unknown>): void {
+  const permissions = (typeof obj.permissions === 'object' && obj.permissions !== null
+    ? obj.permissions
+    : {}) as Record<string, unknown>
+  const allow = Array.isArray(permissions.allow) ? [...(permissions.allow as string[])] : []
+  if (!allow.includes(MCP_PERMISSION_ALLOW)) allow.push(MCP_PERMISSION_ALLOW)
+  permissions.allow = allow
+  obj.permissions = permissions
+}
+
+function removePermissions(obj: Record<string, unknown>): void {
+  if (typeof obj.permissions !== 'object' || obj.permissions === null) return
+  const permissions = obj.permissions as Record<string, unknown>
+  if (!Array.isArray(permissions.allow)) return
+  const allow = (permissions.allow as string[]).filter((e) => e !== MCP_PERMISSION_ALLOW)
+  if (allow.length === 0) delete permissions.allow
+  else permissions.allow = allow
+  if (Object.keys(permissions).length === 0) delete obj.permissions
+}
+
+/** Merge our hooks + MCP allowlist; preserve every other key and the user's own hook entries. */
 export function mergeHooks(settingsJson: string, ctxHookPath: string): string {
   const obj = JSON.parse(settingsJson) as Record<string, unknown>
   const hooks = (typeof obj.hooks === 'object' && obj.hooks !== null ? obj.hooks : {}) as Record<
@@ -78,6 +99,7 @@ export function mergeHooks(settingsJson: string, ctxHookPath: string): string {
     hooks[event] = [...userKept, ...ourGroups]
   }
   obj.hooks = hooks
+  mergePermissions(obj)
   return JSON.stringify(obj, null, 2) + '\n'
 }
 
@@ -93,5 +115,6 @@ export function removeHooks(settingsJson: string): string {
     else hooks[event] = kept
   }
   if (Object.keys(hooks).length === 0) delete obj.hooks
+  removePermissions(obj)
   return JSON.stringify(obj, null, 2) + '\n'
 }

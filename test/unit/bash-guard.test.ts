@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   classifyBashCommand,
+  isBroadSearchScope,
   shellWords,
   splitCompound,
   type BashGuardContext,
@@ -90,6 +91,12 @@ const cases: [string, Expected[]][] = [
   ['head target/debug/build.log', [{ tier: 'inefficient', rule: 'cat-generated' }]],
   ['ls -R', [{ tier: 'inefficient', rule: 'ls-R' }]],
   ['ls -la src', []],
+  ['which mcp__ctx__context_pack', [{ tier: 'inefficient', rule: 'mcp-via-shell' }]],
+  ['command -v mcp__ctx__symbol_search', [{ tier: 'inefficient', rule: 'mcp-via-shell' }]],
+  ['mcp__ctx__context_pack', [{ tier: 'inefficient', rule: 'mcp-via-shell' }]],
+  ['trace_symbol AutomaticIndexResolving', [{ tier: 'inefficient', rule: 'ctx-cli-via-shell' }]],
+  ['ctx trace AutomaticIndexResolving', [{ tier: 'inefficient', rule: 'ctx-cli-via-shell' }]],
+  ['ctx references foo', [{ tier: 'inefficient', rule: 'ctx-cli-via-shell' }]],
   // --- clean / edge ---
   ['echo hello && ls', []],
   ['npm test', []],
@@ -126,7 +133,26 @@ describe('classifyBashCommand', () => {
 
   it('broad-grep suggestion names the pattern', () => {
     const got = classifyBashCommand('grep -r computeTotal .', ctx)
-    expect(got[0]?.suggestion).toContain("mcp__ctx__symbol_search('computeTotal')")
+    expect(got[0]?.suggestion).toContain("mcp__ctx__trace_symbol('computeTotal')")
+  })
+
+  it('flags find on a parent monorepo path', () => {
+    const mono: BashGuardContext = {
+      repoRoot: '/Users/vincent/dev/reelevant/back/workflows',
+      secretGlobs: [],
+      riskyGlobs: [],
+    }
+    const cmd =
+      'find /Users/vincent/dev/reelevant -type f -name "*.ts" -o -name "*.tsx" -o -name "*.js" | head -50'
+    const got = classifyBashCommand(cmd, mono)
+    expect(got.some((v) => v.rule === 'find-broad')).toBe(true)
+  })
+
+  it('isBroadSearchScope detects parent paths', () => {
+    const repo = '/Users/vincent/dev/reelevant/back/workflows'
+    expect(isBroadSearchScope('.', repo)).toBe(true)
+    expect(isBroadSearchScope('/Users/vincent/dev/reelevant', repo)).toBe(true)
+    expect(isBroadSearchScope('packages/engine', repo)).toBe(false)
   })
 
   it('never throws on weird input', () => {

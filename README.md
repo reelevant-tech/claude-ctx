@@ -18,7 +18,7 @@ Claude Code ──hooks──▶  ctx-hook (slim, ~40ms cold start, no parser)
 - **SessionStart hook** ensures the index is fresh (incremental, or background build for huge repos) and injects a compact repo overview + coding rules + last-session recap.
 - **UserPromptSubmit hook** routes your prompt to a token-budgeted *context pack* — the likely-relevant files, why each matters, key symbols, related tests, dependency links — and injects it before Claude starts working. Conversational prompts ("thanks", "yes") are skipped.
 - **PreToolUse hooks** warn (advisory by default) on broad `grep -r`, reads of generated/huge files, edits to generated/infra/secret files, and dangerous shell commands (`rm -rf /`, force-push to main, `cat .env`, env exfiltration). Editing a file with unread tests nudges you to check them.
-- **PostToolUse / Stop hooks** record session memory (files read/edited, commands run, decisions) and distill it for the next session.
+- **PostToolUse / Stop hooks** record session memory (files read/edited, commands run, decisions) and distill it for the next session. Each edit also triggers an incremental index rebuild in the background (embeddings refreshed when enabled).
 - **MCP tools** let Claude pull context on demand instead of grepping.
 
 Everything **fails open**: any error in the layer prints `{}` and exits 0, so it can never break a Claude Code session.
@@ -30,6 +30,8 @@ npm install
 npm run build
 node dist/cli.cjs install      # merges hooks into ~/.claude/settings.json (backed up first)
                                # + registers the `ctx` MCP server at user scope
+                               # + installs embeddings runtime (transformers.js) and embeds the
+                               #   current git repo if you run install from one (--no-embed to skip)
 node dist/cli.cjs doctor       # verify
 ```
 
@@ -130,7 +132,7 @@ Defaults live in code; override globally in `~/.claude-ctx/config.json` and per-
   "inject": { "sessionStart": true, "userPromptSubmit": true },
   "guard": { "bash": "warn", "edits": "warn", "reads": "warn" }, // warn | enforce | off
   "riskyGlobs": [], "secretGlobs": [], "exclude": [],
-  "maxFileSizeKb": 512, "maxFiles": 20000, "bgIndexThresholdFiles": 2000,
+  "maxFileSizeKb": 512, "maxFiles": 200000, "bgIndexThresholdFiles": 2000,
   "embeddings": { "enabled": true, "model": "Xenova/all-MiniLM-L6-v2", "weight": 0.5 }
 }
 ```

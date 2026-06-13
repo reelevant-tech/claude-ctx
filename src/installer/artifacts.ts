@@ -15,6 +15,16 @@ if [ "$1" = "mcp" ]; then exec "$NODE" "$DIR/mcp.cjs"; fi
 exec "$NODE" "$DIR/hook.cjs" "$@"
 `
 
+const CTX_CLI_SH = `#!/bin/sh
+# claude-ctx CLI wrapper
+DIR="$(cd "$(dirname "$0")" && pwd)"
+NODE="$(command -v node 2>/dev/null)"
+if [ -z "$NODE" ] && [ -f "$DIR/../node-path" ]; then NODE="$(head -n1 "$DIR/../node-path")"; [ -x "$NODE" ] || NODE=""; fi
+for CAND in /opt/homebrew/bin/node /usr/local/bin/node; do [ -z "$NODE" ] && [ -x "$CAND" ] && NODE="$CAND"; done
+if [ -z "$NODE" ]; then echo 'ctx: node not found' >&2; exit 127; fi
+exec "$NODE" "$DIR/cli.cjs" "$@"
+`
+
 export function installArtifacts(distDir: string): { binDir: string } {
   const binDir = join(dataDir(), 'bin')
   mkdirSync(binDir, { recursive: true })
@@ -34,6 +44,9 @@ export function installArtifacts(distDir: string): { binDir: string } {
   const wrapper = join(binDir, 'ctx-hook')
   writeFileSync(wrapper, CTX_HOOK_SH)
   chmodSync(wrapper, 0o755)
+  const cli = join(binDir, 'ctx')
+  writeFileSync(cli, CTX_CLI_SH)
+  chmodSync(cli, 0o755)
   writeFileSync(join(dataDir(), 'node-path'), process.execPath + '\n')
   return { binDir }
 }

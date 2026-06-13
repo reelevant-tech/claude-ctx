@@ -102,10 +102,14 @@ export function buildPack(
   }
 
   let nextStep: string | undefined
-  if (confidence !== 'high') {
+  const leadPath = selected[0]?.path ?? top?.path
+  const topSym = leadPath ? topSymbols(leadPath, idx, tokenSet)[0] : undefined
+  if (confidence === 'high' && topSym) {
+    nextStep = `Try mcp__ctx__trace_symbol('${topSym.n}') for definition + references + callees`
+  } else if (confidence !== 'high') {
     const u = unmatched[0]
-    if (u) nextStep = `Try mcp__ctx__symbol_search('${u.t}')`
-    else if (top) nextStep = `Read ${top.path} first`
+    if (u) nextStep = `Try mcp__ctx__symbol_search('${u.t}'), then mcp__ctx__trace_symbol('<symbol>')`
+    else if (top) nextStep = `Read ${top.path} first, or mcp__ctx__trace_symbol('<symbol>')`
   }
 
   let excerpt: PackExcerpt | undefined

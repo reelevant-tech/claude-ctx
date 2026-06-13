@@ -6,6 +6,7 @@ import { run as doctor } from '../cli/commands/doctor'
 import { run as embedSetup } from '../cli/commands/embed-setup'
 import { run as evalCmd } from '../cli/commands/eval'
 import { run as references } from '../cli/commands/references'
+import { run as trace } from '../cli/commands/trace-symbol'
 import { run as symbolTree } from '../cli/commands/symbol-tree'
 import { run as indexCmd } from '../cli/commands/index-cmd'
 import { run as init } from '../cli/commands/init'
@@ -37,7 +38,8 @@ const COMMANDS: Record<string, { run: Cmd; help: string }> = {
   deps: { run: deps, help: 'dependency trace: ctx deps <from> [to]' },
   symbol_tree: { run: symbolTree, help: 'nested symbol tree of a file (AST)' },
   calls: { run: calls, help: 'intra-file call expressions in a file (best-effort)' },
-  references: { run: references, help: 'name-based call sites of a symbol (best-effort)' },
+  references: { run: references, help: 'find references to a symbol (TypeScript-aware)' },
+  trace: { run: trace, help: 'trace a symbol: definition, refs, callees, import paths' },
   tests: { run: testsCmd, help: 'tests covering a path + how to run them' },
   recent: { run: recent, help: 'recently changed files (--days --limit)' },
   vectors: { run: vectors, help: 'semantic index stats, or nearest chunks: ctx vectors "<query>"' },
@@ -47,7 +49,7 @@ const COMMANDS: Record<string, { run: Cmd; help: string }> = {
   init: { run: init, help: 'write a managed claude-ctx block into CLAUDE.md (--rules)' },
   'embed-setup': { run: embedSetup, help: 'enable local offline semantic search (installs the model)' },
   eval: { run: evalCmd, help: 'benchmark retrieval: ctx eval <queries.json> [--k 8]' },
-  install: { run: install, help: 'install hooks + MCP server globally (--no-mcp)' },
+  install: { run: install, help: 'install hooks + MCP + embeddings runtime globally (--no-mcp, --no-embed)' },
   uninstall: { run: uninstall, help: 'remove hooks + MCP server (--purge)' },
   doctor: { run: doctor, help: 'diagnose the installation' },
 }

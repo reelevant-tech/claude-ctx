@@ -5,6 +5,7 @@
  */
 import { posix, resolve } from 'node:path'
 import picomatch from 'picomatch'
+import { isCtxCliMisuse, isMcpShellMisuse, CTX_CLI_GUARD_SUGGESTION, MCP_SHELL_GUARD_SUGGESTION } from '../mcp-rules'
 import type { GuardVerdict } from '../types'
 
 export interface BashGuardContext {
@@ -262,6 +263,32 @@ function isWholeRepoTarget(arg: string, repoRoot: string): boolean {
   }
 }
 
+/** True when a find/grep root is the repo, an ancestor (parent monorepo), /, or implicit whole-repo. */
+export function isBroadSearchScope(arg: string, repoRoot: string): boolean {
+  if (isWholeRepoTarget(arg, repoRoot)) return true
+  if (arg.includes('$') || arg.startsWith('~')) return false
+  try {
+    const absRepo = resolve(repoRoot)
+    const absArg = arg.startsWith('/') ? resolve(arg) : resolve(repoRoot, arg)
+    if (absArg === absRepo || absArg === '/') return true
+    const prefix = absArg.endsWith('/') ? absArg : `${absArg}/`
+    return absRepo.startsWith(prefix)
+  } catch {
+    return false
+  }
+}
+
+/** Rules that mean the agent is rediscovering repo structure via shell instead of the index. */
+export const BROAD_DISCOVERY_RULES = new Set(['find-broad', 'broad-grep', 'ctx-cli-via-shell', 'mcp-via-shell'])
+
+/** First broad-discovery verdict for a compound command, if any. */
+export function broadDiscoveryVerdict(command: string, ctx: BashGuardContext): GuardVerdict | null {
+  for (const v of classifyBashCommand(command, ctx)) {
+    if (BROAD_DISCOVERY_RULES.has(v.rule)) return v
+  }
+  return null
+}
+
 // ---------------------------------------------------------------------------
 // Classification
 // ---------------------------------------------------------------------------
@@ -290,6 +317,24 @@ function shortFlagLetters(args: string[]): string {
 }
 
 function classifySub(sub: string, full: string, ctx: BashGuardContext): GuardVerdict | null {
+  if (isMcpShellMisuse(sub)) {
+    return {
+      tier: 'inefficient',
+      rule: 'mcp-via-shell',
+      reason: 'mcp__ctx__* tools are not shell commands',
+      suggestion: MCP_SHELL_GUARD_SUGGESTION,
+    }
+  }
+
+  if (isCtxCliMisuse(sub)) {
+    return {
+      tier: 'inefficient',
+      rule: 'ctx-cli-via-shell',
+      reason: 'ctx/trace_symbol are indexed lookups, not shell commands',
+      suggestion: CTX_CLI_GUARD_SUGGESTION,
+    }
+  }
+
   let words = shellWords(sub)
   while (words.length > 1 && WRAPPERS.has(words[0] ?? '')) words = words.slice(1)
   const first = words[0]
@@ -433,29 +478,29 @@ function classifySub(sub: string, full: string, ctx: BashGuardContext): GuardVer
       }
       const pattern = pos[0] ?? '<pattern>'
       const targets = pos.slice(1)
-      if (targets.length === 0 || targets.every((t) => isWholeRepoTarget(t, ctx.repoRoot))) {
+      if (targets.length === 0 || targets.every((t) => isBroadSearchScope(t, ctx.repoRoot))) {
         return {
           tier: 'inefficient',
           rule: 'broad-grep',
           reason: 'repo-wide recursive text search',
-          suggestion: `use mcp__ctx__symbol_search('${pattern}') or scope the search to a subdirectory`,
+          suggestion: `use mcp__ctx__trace_symbol('${pattern}') or mcp__ctx__symbol_search('${pattern}')`,
         }
       }
     }
   }
 
-  if (argv0 === 'find' && args.some((w) => w === '-name' || w === '-iname' || w === '-type')) {
+  if (argv0 === 'find') {
     const paths: string[] = []
     for (const w of args) {
       if (w.startsWith('-') || w === '(' || w === '!') break
       paths.push(w)
     }
-    if (paths.length === 0 || paths.every((p) => isWholeRepoTarget(p, ctx.repoRoot))) {
+    if (paths.length === 0 || paths.every((p) => isBroadSearchScope(p, ctx.repoRoot))) {
       return {
         tier: 'inefficient',
         rule: 'find-broad',
-        reason: 'whole-repo find',
-        suggestion: 'use mcp__ctx__repo_tree to browse the file tree',
+        reason: 'whole-repo or parent-monorepo find',
+        suggestion: 'use mcp__ctx__trace_symbol or mcp__ctx__symbol_search — not find',
       }
     }
   }
