@@ -88,4 +88,13 @@ describe('mcp trace_symbol', () => {
     expect(txt).toContain('call_chain: createInvoice')
     expect(txt).toContain('→ parse()')
   })
+
+  it('field_refs returns read/write sites of a member field', () => {
+    expect(Object.keys(toolImpls)).toContain('field_refs')
+    // Customer.name is read in src/billing/invoice.ts (`${c.name}`)
+    const txt = toolImpls.field_refs!(ROOT, { field: 'name' })
+    expect(txt).toContain('field: name')
+    expect(txt).toContain('billing/invoice.ts')
+    expect(txt).toContain('**Reads**')
+  })
 })

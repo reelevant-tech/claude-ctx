@@ -232,6 +232,7 @@ export type ShardName =
   | 'vectors'
   | 'symtree'
   | 'calls'
+  | 'fieldaccess'
 
 /** A node in a per-file symbol tree (nested: mod>impl>method, class>method, …). */
 export interface SymbolNode {
@@ -270,6 +271,23 @@ export interface CallRef {
 /** Per-file intra-file call expressions (P1, best-effort). */
 export interface CallsShard {
   calls: Record<string, CallRef[]>
+}
+
+/** A member/field access observed in a file (best-effort, name-based). */
+export interface FieldRef {
+  /** accessed property/field name */
+  field: string
+  /** 1-based line */
+  line: number
+  /** read = obj.field; write = obj.field = … / {field: x} / {field}; destructure = const {field} = … */
+  kind: 'read' | 'write' | 'destructure'
+  /** enclosing top-level/nested symbol name, if known */
+  caller?: string
+}
+
+/** Per-file member/field accesses (data-flow, best-effort name-based; typed refs resolved on demand). */
+export interface FieldAccessShard {
+  fieldAccesses: Record<string, FieldRef[]>
 }
 
 /** One embedded chunk: a whole file (symbol undefined) or a single symbol.

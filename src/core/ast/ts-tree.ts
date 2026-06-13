@@ -1,9 +1,10 @@
 import ts from 'typescript'
-import type { CallRef, SymbolNode } from '../types'
+import type { CallRef, FieldRef, SymbolNode } from '../types'
 
 export interface TsTreeExtract {
   tree: SymbolNode[]
   calls: CallRef[]
+  fields: FieldRef[]
 }
 
 function scriptKind(fileName: string): ts.ScriptKind {
@@ -26,7 +27,7 @@ function isPublicMember(node: ts.Node): boolean {
 }
 
 export function extractTsTree(content: string, fileName: string): TsTreeExtract {
-  const sf = ts.createSourceFile(fileName, content, ts.ScriptTarget.Latest, false, scriptKind(fileName))
+  const sf = ts.createSourceFile(fileName, content, ts.ScriptTarget.Latest, true, scriptKind(fileName))
   const lineOf = (n: ts.Node): number => sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1
   const endLineOf = (n: ts.Node): number => sf.getLineAndCharacterOfPosition(n.getEnd()).line + 1
   const sigOf = (n: ts.Node): string => {
@@ -86,12 +87,24 @@ export function extractTsTree(content: string, fileName: string): TsTreeExtract 
   }
   topLevel(sf.statements, tree, false)
 
-  // calls: full walk tracking the enclosing named function/method
+  // calls + field accesses: full walk tracking the enclosing named function/method
   const calls: CallRef[] = []
+  const fields: FieldRef[] = []
   const calleeName = (expr: ts.Expression): string | null => {
     if (ts.isIdentifier(expr)) return expr.text
     if (ts.isPropertyAccessExpression(expr)) return expr.name.text
     return null
+  }
+  const mkField = (field: string, line: number, kind: FieldRef['kind'], caller?: string): FieldRef =>
+    caller ? { field, line, kind, caller } : { field, line, kind }
+  // a member access is a write when it's the LHS of an assignment or a ++/-- target
+  const isWriteTarget = (n: ts.Node): boolean => {
+    const p = n.parent
+    if (p && ts.isBinaryExpression(p) && p.left === n) {
+      const op = p.operatorToken.kind
+      return op === ts.SyntaxKind.EqualsToken || (op >= ts.SyntaxKind.FirstCompoundAssignment && op <= ts.SyntaxKind.LastCompoundAssignment)
+    }
+    return p !== undefined && (ts.isPostfixUnaryExpression(p) || ts.isPrefixUnaryExpression(p))
   }
   const visit = (n: ts.Node, caller: string | undefined): void => {
     let next = caller
@@ -102,9 +115,22 @@ export function extractTsTree(content: string, fileName: string): TsTreeExtract 
       const callee = calleeName(n.expression)
       if (callee) calls.push(caller ? { callee, line: lineOf(n), caller } : { callee, line: lineOf(n) })
     }
+    // field accesses (data-flow): obj.field, obj['field'], {field: x}/{field}, const {field} = …
+    if (ts.isPropertyAccessExpression(n)) {
+      fields.push(mkField(n.name.text, lineOf(n), isWriteTarget(n) ? 'write' : 'read', caller))
+    } else if (ts.isElementAccessExpression(n) && n.argumentExpression && ts.isStringLiteralLike(n.argumentExpression)) {
+      fields.push(mkField(n.argumentExpression.text, lineOf(n), isWriteTarget(n) ? 'write' : 'read', caller))
+    } else if (ts.isPropertyAssignment(n) && (ts.isIdentifier(n.name) || ts.isStringLiteralLike(n.name))) {
+      fields.push(mkField(n.name.text, lineOf(n), 'write', caller))
+    } else if (ts.isShorthandPropertyAssignment(n)) {
+      fields.push(mkField(n.name.text, lineOf(n), 'write', caller))
+    } else if (ts.isBindingElement(n) && ts.isObjectBindingPattern(n.parent)) {
+      const propName = n.propertyName ?? n.name
+      if (ts.isIdentifier(propName)) fields.push(mkField(propName.text, lineOf(n), 'destructure', caller))
+    }
     ts.forEachChild(n, (c) => visit(c, next))
   }
   visit(sf, undefined)
 
-  return { tree, calls }
+  return { tree, calls, fields }
 }

@@ -20,8 +20,8 @@ afterEach(() => {
 })
 
 describe('toolImpls', () => {
-  it('registers exactly 18 tools', async () => {
-    expect(Object.keys(toolImpls).length).toBe(18)
+  it('registers exactly 19 tools', async () => {
+    expect(Object.keys(toolImpls).length).toBe(19)
   })
 
   it('repo_overview reports the project', async () => {

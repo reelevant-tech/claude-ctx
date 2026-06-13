@@ -8,7 +8,7 @@ Works on Node.js / TypeScript and Rust repos (and degrades gracefully elsewhere)
 
 ```
 Claude Code ──hooks──▶  ctx-hook (slim, ~40ms cold start, no parser)
-            ──MCP───▶  ctx-mcp  (18 query tools)
+            ──MCP───▶  ctx-mcp  (19 query tools)
                           │
                   ┌───────▼────────┐
                   │  ~/.claude-ctx │  per-repo sharded JSON index + session memory
@@ -72,7 +72,7 @@ Global flags: `--repo <path>` (default cwd, resolved to the git root), `--json`.
 
 ## MCP tools (`mcp__ctx__*`)
 
-`repo_overview` · `repo_tree` · `context_pack` · `symbol_search` · `trace_symbol` · `symbol_body` · `call_chain` · `references` · `related_files` · `dep_trace` · `symbol_tree` · `calls` · `find_tests` · `recent_changes` · `risk_check` · `session_summary` · `session_note` · `index_refresh`. Every result is token-capped and never throws.
+`repo_overview` · `repo_tree` · `context_pack` · `symbol_search` · `trace_symbol` · `symbol_body` · `call_chain` · `field_refs` · `references` · `related_files` · `dep_trace` · `symbol_tree` · `calls` · `find_tests` · `recent_changes` · `risk_check` · `session_summary` · `session_note` · `index_refresh`. Every result is token-capped and never throws.
 
 ## AST / symbol trees & calls (tree-sitter)
 
@@ -85,6 +85,7 @@ Beyond the flat symbol list, the index builds a **nested symbol tree** per file 
 - `ctx trace <symbol>` / `mcp__ctx__trace_symbol` — one-call map: definition + references (tagged `def`/`call`/`use`) + callees + import paths + related files; `--kind calls` for call-sites only.
 - `ctx body <symbol>` / `mcp__ctx__symbol_body` — the full source body of a symbol in one call (definition → end-of-body, redacted, capped) so you don't Read-loop a file.
 - `ctx call-chain <symbol>` / `mcp__ctx__call_chain` — best-effort cross-file execution flow (intra-file calls + import graph), each edge labelled `same-file`/`import`/`heuristic`/`external`.
+- `ctx field-refs <field>` / `mcp__ctx__field_refs` — **data-flow**: read/write/destructure sites of a member/field (`obj.field`), typed via the TS type system when resolvable (precise) else name-based (best-effort). Answers "where is this value produced / consumed", which `trace_symbol`/`references` (symbol-by-name) and `call_chain` (call edges) don't. No write↔read link is asserted across serialization boundaries.
 
 This is deliberately **not** an exact global call graph: cross-file call resolution in TS/Rust gets wrong/noisy fast, so `references` stays typed-or-name-based and `call_chain` labels every edge with how it was resolved.
 

@@ -169,3 +169,54 @@ export function findTsReferences(
 
   return out
 }
+
+/**
+ * Type-aware references for a member/field (e.g. an interface property), seeded
+ * from one real occurrence. Interface fields aren't in idx.symbols, so we jump
+ * from a usage (getDefinitionAtPosition → the property declaration) and then list
+ * all typed references there. Null when not TS / no seed / unresolved.
+ */
+export function findTsFieldReferences(
+  root: string,
+  idx: LoadedIndex,
+  field: string,
+  cacheKey: number,
+  seed: { file: string; line: number },
+): TsReference[] | null {
+  if (!isTsFile(seed.file)) return null
+  const service = getLanguageService(root, idx, cacheKey)
+  if (!service) return null
+
+  const seedAbs = absPath(root, seed.file)
+  let content: string
+  try {
+    content = readFileSync(seedAbs, 'utf8')
+  } catch {
+    return null
+  }
+  const sf = ts.createSourceFile(seed.file, content, ts.ScriptTarget.Latest, true)
+  const seedOffset = identifierOffset(sf, seed.line, field)
+  if (seedOffset === null) return null
+
+  // hop from the usage to the property declaration, then collect all typed refs there
+  const decl = service.getDefinitionAtPosition(seedAbs, seedOffset)?.[0]
+  if (!decl) return null
+  const raw = service.getReferencesAtPosition(decl.fileName, decl.textSpan.start)
+  if (!raw || raw.length === 0) return []
+
+  const indexed = langCache?.indexed ?? new Set<string>()
+  const seen = new Set<string>()
+  const out: TsReference[] = []
+  for (const ref of raw) {
+    const rel = toRel(root, ref.fileName)
+    if (!rel || !indexed.has(rel)) continue
+    const snap = service.getProgram()?.getSourceFile(ref.fileName)
+    if (!snap) continue
+    const line = snap.getLineAndCharacterOfPosition(ref.textSpan.start).line + 1
+    const key = `${rel}:${line}:${ref.textSpan.start}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ file: rel, line })
+  }
+  return out
+}

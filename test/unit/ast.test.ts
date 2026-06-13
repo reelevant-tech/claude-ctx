@@ -65,6 +65,24 @@ export const VERSION = '1'`
     expect(calls.some((c) => c.callee === 'createInvoice' && c.caller === 'main')).toBe(true)
     expect(calls.some((c) => c.callee === 'format' && c.caller === 'createInvoice')).toBe(true)
   })
+
+  it('extracts field accesses tagged read/write/destructure with the enclosing function', () => {
+    const src = `function f(o: any) {
+  const a = o.alpha
+  o.beta = 1
+  const obj = { gamma: a }
+  const { delta } = o
+  return obj.gamma
+}`
+    const { fields } = extractTsTree(src, 'f.ts')
+    const has = (field: string, kind: string) =>
+      fields.some((x) => x.field === field && x.kind === kind && x.caller === 'f')
+    expect(has('alpha', 'read')).toBe(true)
+    expect(has('beta', 'write')).toBe(true)
+    expect(has('gamma', 'write')).toBe(true) // { gamma: a } object-literal key
+    expect(has('delta', 'destructure')).toBe(true)
+    expect(has('gamma', 'read')).toBe(true) // obj.gamma
+  })
 })
 
 describe('findReferences', () => {

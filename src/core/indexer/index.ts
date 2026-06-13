@@ -12,6 +12,8 @@ import {
 import type {
   CallRef,
   CallsShard,
+  FieldRef,
+  FieldAccessShard,
   CommandsShard,
   CtxConfig,
   FileRecord,
@@ -53,6 +55,7 @@ interface ProcessedFile {
   parse: ParseResult | null
   tree?: SymbolNode[]
   calls?: CallRef[]
+  fields?: FieldRef[]
   treeParser?: 'ts-api' | 'tree-sitter'
 }
 
@@ -134,6 +137,7 @@ async function processFile(
   let defaultKind: FileRecord['kind'] = 'source'
   let tree: SymbolNode[] | undefined
   let calls: CallRef[] | undefined
+  let fields: FieldRef[] | undefined
   let treeParser: 'ts-api' | 'tree-sitter' | undefined
   if (lang === 'ts' || lang === 'js') {
     try {
@@ -147,6 +151,7 @@ async function processFile(
       const t = extractTsTree(content, rel)
       tree = t.tree
       calls = t.calls
+      fields = t.fields
       treeParser = 'ts-api'
     } catch {
       /* tree is best-effort */
@@ -187,6 +192,7 @@ async function processFile(
   const pf: ProcessedFile = { rel, record: rec, parse }
   if (tree) pf.tree = tree
   if (calls) pf.calls = calls
+  if (fields) pf.fields = fields
   if (treeParser) pf.treeParser = treeParser
   return pf
 }
@@ -284,6 +290,7 @@ function writeShards(
   commands: CommandsShard,
   symtree: SymbolTreeShard,
   calls: CallsShard,
+  fieldAccess: FieldAccessShard,
 ): void {
   // meta written LAST — its presence marks a usable index
   saveShard(root, 'files', files)
@@ -293,6 +300,7 @@ function writeShards(
   saveShard(root, 'commands', commands)
   saveShard(root, 'symtree', symtree)
   saveShard(root, 'calls', calls)
+  saveShard(root, 'fieldaccess', fieldAccess)
   saveShard(root, 'meta', meta)
   clearPending(root)
 }
@@ -342,6 +350,7 @@ async function fullBuild(root: string, cfg: CtxConfig): Promise<IndexStats> {
     const trees: Record<string, SymbolNode[]> = {}
     const treeParsers: Record<string, 'ts-api' | 'tree-sitter' | 'none'> = {}
     const callsByFile: Record<string, CallRef[]> = {}
+    const fieldsByFile: Record<string, FieldRef[]> = {}
     let skipped = scan.skippedCount
 
     for (const sf of scan.files) {
@@ -361,6 +370,7 @@ async function fullBuild(root: string, cfg: CtxConfig): Promise<IndexStats> {
         treeParsers[pf.rel] = pf.treeParser ?? 'none'
       }
       if (pf.calls && pf.calls.length > 0) callsByFile[pf.rel] = pf.calls
+      if (pf.fields && pf.fields.length > 0) fieldsByFile[pf.rel] = pf.fields
     }
 
     const fileSet = new Set(records.keys())
@@ -396,7 +406,7 @@ async function fullBuild(root: string, cfg: CtxConfig): Promise<IndexStats> {
     meta.repo = repoIdentity(root)
     meta.gitId = gitIdentity(root)
 
-    writeShards(root, meta, filesShard, symbols, graph, git, commands, { trees, parsers: treeParsers }, { calls: callsByFile })
+    writeShards(root, meta, filesShard, symbols, graph, git, commands, { trees, parsers: treeParsers }, { calls: callsByFile }, { fieldAccesses: fieldsByFile })
     writeRepoJson(root, meta)
     dropLegacyIndex(root)
     return {
@@ -448,6 +458,7 @@ async function tryIncremental(root: string, cfg: CtxConfig, meta: IndexMeta): Pr
     const importsByFile = new Map<string, string[]>()
     const newTrees = new Map<string, { tree: SymbolNode[]; parser: 'ts-api' | 'tree-sitter' | 'none' }>()
     const newCalls = new Map<string, CallRef[]>()
+    const newFields = new Map<string, FieldRef[]>()
     for (const sf of changed) {
       const pf = await processFile(root, sf, cfg, meta.packages)
       if (!pf) {
@@ -461,6 +472,7 @@ async function tryIncremental(root: string, cfg: CtxConfig, meta: IndexMeta): Pr
       }
       if (pf.tree) newTrees.set(pf.rel, { tree: pf.tree, parser: pf.treeParser ?? 'none' })
       newCalls.set(pf.rel, pf.calls ?? [])
+      newFields.set(pf.rel, pf.fields ?? [])
     }
 
     const fileSet = new Set(records.keys())
@@ -553,9 +565,11 @@ async function tryIncremental(root: string, cfg: CtxConfig, meta: IndexMeta): Pr
     // Patch symtree/calls: keep entries for surviving files, replace changed ones.
     const oldSymtree = loadShard<SymbolTreeShard>(root, 'symtree') ?? { trees: {}, parsers: {} }
     const oldCalls = loadShard<CallsShard>(root, 'calls') ?? { calls: {} }
+    const oldFields = loadShard<FieldAccessShard>(root, 'fieldaccess') ?? { fieldAccesses: {} }
     const trees: Record<string, SymbolNode[]> = {}
     const treeParsers: Record<string, 'ts-api' | 'tree-sitter' | 'none'> = {}
     const callsByFile: Record<string, CallRef[]> = {}
+    const fieldsByFile: Record<string, FieldRef[]> = {}
     for (const rel of records.keys()) {
       if (newTrees.has(rel)) {
         trees[rel] = newTrees.get(rel)!.tree
@@ -570,10 +584,16 @@ async function tryIncremental(root: string, cfg: CtxConfig, meta: IndexMeta): Pr
       } else if (oldCalls.calls[rel]) {
         callsByFile[rel] = oldCalls.calls[rel]!
       }
+      if (newFields.has(rel)) {
+        const f = newFields.get(rel)!
+        if (f.length > 0) fieldsByFile[rel] = f
+      } else if (oldFields.fieldAccesses[rel]) {
+        fieldsByFile[rel] = oldFields.fieldAccesses[rel]!
+      }
     }
 
     const commands = extractCommands(root, meta.packages)
-    writeShards(root, newMeta, { files: filesObj }, symbols, graph, git, commands, { trees, parsers: treeParsers }, { calls: callsByFile })
+    writeShards(root, newMeta, { files: filesObj }, symbols, graph, git, commands, { trees, parsers: treeParsers }, { calls: callsByFile }, { fieldAccesses: fieldsByFile })
     writeRepoJson(root, newMeta)
     return {
       fileCount: records.size,

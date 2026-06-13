@@ -9,6 +9,7 @@ import { run as references } from '../cli/commands/references'
 import { run as trace } from '../cli/commands/trace-symbol'
 import { run as body } from '../cli/commands/symbol-body'
 import { run as callChainCmd } from '../cli/commands/call-chain'
+import { run as fieldRefsCmd } from '../cli/commands/field-refs'
 import { run as symbolTree } from '../cli/commands/symbol-tree'
 import { run as indexCmd } from '../cli/commands/index-cmd'
 import { run as init } from '../cli/commands/init'
@@ -44,6 +45,7 @@ const COMMANDS: Record<string, { run: Cmd; help: string }> = {
   trace: { run: trace, help: 'trace a symbol: definition, refs, callees, import paths (--kind calls)' },
   body: { run: body, help: 'full source body of a symbol: ctx body <symbol> [--max-lines N]' },
   'call-chain': { run: callChainCmd, help: 'best-effort cross-file call chain: ctx call-chain <symbol> [--depth N]' },
+  'field-refs': { run: fieldRefsCmd, help: "data-flow read/write sites of a field: ctx field-refs <field> [--file <p>]" },
   tests: { run: testsCmd, help: 'tests covering a path + how to run them' },
   recent: { run: recent, help: 'recently changed files (--days --limit)' },
   vectors: { run: vectors, help: 'semantic index stats, or nearest chunks: ctx vectors "<query>"' },

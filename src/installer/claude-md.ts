@@ -7,7 +7,7 @@ export const END = '<!-- claude-ctx:end -->'
 
 const RULES = [
   `- ${MCP_AGENT_RULE}`,
-  '- Pick the tool: one symbol end-to-end → `mcp__ctx__trace_symbol` · its full body → `mcp__ctx__symbol_body` · its execution flow → `mcp__ctx__call_chain` · all usages → `mcp__ctx__references` (kind:"calls" for call-sites only) · find by name → `mcp__ctx__symbol_search` (not grep) · files for a task → `mcp__ctx__context_pack`.',
+  '- Pick the tool: one symbol end-to-end → `mcp__ctx__trace_symbol` · its full body → `mcp__ctx__symbol_body` · its execution flow → `mcp__ctx__call_chain` · a value/field’s read+write sites → `mcp__ctx__field_refs` · all usages → `mcp__ctx__references` · find by name → `mcp__ctx__symbol_search` (not grep) · files for a task → `mcp__ctx__context_pack`.',
   '- Use `mcp__ctx__context_pack` first for multi-file work; `mcp__ctx__symbol_body` instead of re-Reading a file to see a whole function.',
   '- Check related tests before editing with `mcp__ctx__find_tests`.',
   '- Never edit generated/vendor files; confirm with the user before changing infra/prod-sensitive files.',
