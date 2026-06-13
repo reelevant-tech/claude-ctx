@@ -60,6 +60,7 @@ Global flags: `--repo <path>` (default cwd, resolved to the git root), `--json`.
 | `ctx tests <path>` | tests covering a file + how to run them |
 | `ctx recent [--days --limit]` | recently changed files |
 | `ctx vectors ["<query>"]` | semantic index stats, or nearest symbol chunks |
+| `ctx eval <queries.json>` | benchmark retrieval: lexical vs hybrid vs vector, hit@k |
 | `ctx risky <path>` | risk classification for a path |
 | `ctx commands` | detected project commands |
 | `ctx summary` | session memory summary |

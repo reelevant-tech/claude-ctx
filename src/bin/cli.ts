@@ -4,6 +4,7 @@ import { run as calls } from '../cli/commands/calls'
 import { run as deps } from '../cli/commands/deps'
 import { run as doctor } from '../cli/commands/doctor'
 import { run as embedSetup } from '../cli/commands/embed-setup'
+import { run as evalCmd } from '../cli/commands/eval'
 import { run as references } from '../cli/commands/references'
 import { run as symbolTree } from '../cli/commands/symbol-tree'
 import { run as indexCmd } from '../cli/commands/index-cmd'
@@ -45,6 +46,7 @@ const COMMANDS: Record<string, { run: Cmd; help: string }> = {
   summary: { run: summary, help: 'session memory summary' },
   init: { run: init, help: 'write a managed claude-ctx block into CLAUDE.md (--rules)' },
   'embed-setup': { run: embedSetup, help: 'enable local offline semantic search (installs the model)' },
+  eval: { run: evalCmd, help: 'benchmark retrieval: ctx eval <queries.json> [--k 8]' },
   install: { run: install, help: 'install hooks + MCP server globally (--no-mcp)' },
   uninstall: { run: uninstall, help: 'remove hooks + MCP server (--purge)' },
   doctor: { run: doctor, help: 'diagnose the installation' },
