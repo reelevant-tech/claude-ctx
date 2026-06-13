@@ -31,6 +31,9 @@ export function loadState(root: string, sessionId: string): SessionState {
       updatedAt: typeof r.updatedAt === 'number' ? r.updatedAt : 0,
     }
     if (typeof r.firstPrompt === 'string') st.firstPrompt = r.firstPrompt
+    if (typeof r.readStreak === 'number') st.readStreak = r.readStreak
+    if (typeof r.indexQueriedAt === 'number') st.indexQueriedAt = r.indexQueriedAt
+    if (Array.isArray(r.relatedShown)) st.relatedShown = r.relatedShown
     return st
   } catch {
     return emptyState()
@@ -69,7 +72,25 @@ function capReads(reads: Record<string, number>): void {
 export function bumpRead(root: string, sessionId: string, rel: string): SessionState {
   const st = loadState(root, sessionId)
   st.reads[rel] = (st.reads[rel] ?? 0) + 1
+  st.readStreak = (st.readStreak ?? 0) + 1
   capReads(st.reads)
+  return touchAndSave(root, sessionId, st)
+}
+
+/** An index query (context_pack/symbol_search/related_files/…) resets the
+ * manual-read streak — the model is using the index, so stop nudging. */
+export function recordIndexQuery(root: string, sessionId: string): SessionState {
+  const st = loadState(root, sessionId)
+  st.readStreak = 0
+  st.indexQueriedAt = Math.floor(Date.now() / 1000)
+  return touchAndSave(root, sessionId, st)
+}
+
+/** Remember a file whose related neighbourhood was already auto-injected. */
+export function markRelatedShown(root: string, sessionId: string, rel: string): SessionState {
+  const st = loadState(root, sessionId)
+  if (!st.relatedShown) st.relatedShown = []
+  if (!st.relatedShown.includes(rel)) st.relatedShown.push(rel)
   return touchAndSave(root, sessionId, st)
 }
 

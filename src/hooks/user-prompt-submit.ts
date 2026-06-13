@@ -37,10 +37,14 @@ export async function handle(input: HookInput): Promise<HookOutput> {
     aliases: cfg.tokenAliases,
   })
   if (pack.files.length === 0) return {}
+  const preamble =
+    '[claude-ctx] Files most relevant to this request, already indexed and ranked — start from these. ' +
+    'Read them directly; do NOT grep the repo or read files one-by-one to rediscover what is below. ' +
+    'Expand with mcp__ctx__related_files / dep_trace, or mcp__ctx__context_pack for a fuller pack.'
   return {
     hookSpecificOutput: {
       hookEventName: 'UserPromptSubmit',
-      additionalContext: `[claude-ctx auto-context]\n${renderPack(pack)}`,
+      additionalContext: `${preamble}\n${renderPack(pack)}`,
     },
   }
 }

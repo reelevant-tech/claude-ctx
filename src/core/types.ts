@@ -391,6 +391,13 @@ export interface CtxConfig {
   /** per-repo query-token aliases (folded lowercase key -> alias terms), merged
    * over the built-in FR→EN/synonym map. Use for domain jargon (binding→dependency). */
   tokenAliases?: Record<string, string[]>
+  /** inject a file's related neighbourhood (imports/importers/tests/co-changed)
+   * as additionalContext after each Read, so the model gets structure without
+   * cascading. Default true. */
+  relatedOnRead?: boolean
+  /** after this many consecutive manual Reads with no index query, nudge toward
+   * mcp__ctx__context_pack. Default 3. */
+  cascadeReadLimit?: number
   /** optional local-embeddings (offline semantic retrieval) layer */
   embeddings: {
     enabled: boolean
@@ -416,6 +423,7 @@ export type SessionEvent =
   | { ts: number; e: 'bash'; cmd: string; exit?: number }
   | { ts: number; e: 'note'; text: string; kind?: 'decision' | 'todo' | 'question' }
   | { ts: number; e: 'guard'; kind: 'deny' | 'ask' | 'warn'; target: string }
+  | { ts: number; e: 'mcp'; tool: string }
 
 export interface SessionState {
   /** repo-relative path -> read count (LRU-capped at 500 entries) */
@@ -425,6 +433,12 @@ export interface SessionState {
   testsReminded: string[]
   firstPrompt?: string
   updatedAt: number
+  /** consecutive manual Reads since the last index query (context_pack/etc.) */
+  readStreak?: number
+  /** epoch seconds of the last mcp__ctx__* query, if any */
+  indexQueriedAt?: number
+  /** files whose auto-expand "related" neighborhood was already injected */
+  relatedShown?: string[]
 }
 
 export interface SessionSummaryEntry {

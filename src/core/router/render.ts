@@ -38,9 +38,9 @@ export function renderPack(pack: ContextPack): string {
 
 const RULES_DIGEST = [
   '**Rules:**',
-  '- Consult this map before exploring.',
-  '- Call mcp__ctx__context_pack with your task before multi-file work.',
-  '- Prefer mcp__ctx__symbol_search / related_files over repo-wide grep.',
+  '- Start from the injected context / this map — do NOT grep the repo or read files one-by-one to rediscover structure.',
+  '- Call mcp__ctx__context_pack with your task before multi-file work; expand with related_files / dep_trace.',
+  '- Prefer mcp__ctx__symbol_search over repo-wide grep.',
   '- Check related tests before editing (mcp__ctx__find_tests).',
   '- Avoid generated/vendor paths; record decisions with mcp__ctx__session_note.',
 ]

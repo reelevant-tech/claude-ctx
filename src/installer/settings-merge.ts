@@ -44,6 +44,11 @@ export function buildHookEntries(ctxHookPath: string): Record<string, HookGroup[
         matcher: 'Read|Edit|Write|MultiEdit|Bash',
         hooks: [{ type: 'command', command: `${ctxHookPath} post-tool`, timeout: 10 }],
       },
+      {
+        // observe index usage (context_pack/symbol_search/…) to reset the read-cascade streak
+        matcher: 'mcp__ctx__.*',
+        hooks: [{ type: 'command', command: `${ctxHookPath} post-tool`, timeout: 10 }],
+      },
     ],
     Stop: [{ hooks: [{ type: 'command', command: `${ctxHookPath} stop`, timeout: 30 }] }],
     SessionEnd: [{ hooks: [{ type: 'command', command: `${ctxHookPath} session-end`, timeout: 30 }] }],

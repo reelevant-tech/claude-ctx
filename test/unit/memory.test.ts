@@ -15,8 +15,10 @@ import { appendEvent, latestSessionId, readSession } from '../../src/core/memory
 import {
   bumpRead,
   loadState,
+  markRelatedShown,
   markTestsReminded,
   recordEdit,
+  recordIndexQuery,
   saveState,
   setFirstPrompt,
 } from '../../src/core/memory/state'
@@ -91,6 +93,23 @@ describe('memory/state', () => {
     expect(st.reads['src/a.ts']).toBe(2)
     expect(loadState(root, 's1').reads['src/a.ts']).toBe(2)
     expect(st.updatedAt).toBeGreaterThan(0)
+  })
+
+  it('tracks the read-cascade streak and an index query resets it', () => {
+    bumpRead(root, 's1', 'src/a.ts')
+    bumpRead(root, 's1', 'src/b.ts')
+    expect(bumpRead(root, 's1', 'src/c.ts').readStreak).toBe(3)
+    const after = recordIndexQuery(root, 's1')
+    expect(after.readStreak).toBe(0)
+    expect(after.indexQueriedAt).toBeGreaterThan(0)
+    // a read after the query starts a fresh streak
+    expect(bumpRead(root, 's1', 'src/d.ts').readStreak).toBe(1)
+  })
+
+  it('markRelatedShown records files once (idempotent)', () => {
+    markRelatedShown(root, 's1', 'src/a.ts')
+    const st = markRelatedShown(root, 's1', 'src/a.ts')
+    expect(st.relatedShown).toEqual(['src/a.ts'])
   })
 
   it('bumpRead caps reads at 500, evicting lowest count then oldest key', () => {

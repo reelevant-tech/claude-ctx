@@ -37,6 +37,11 @@ describe('mergeHooks', () => {
     expect(events.length).toBe(6)
   })
 
+  it('observes MCP tool calls via a PostToolUse mcp__ctx__.* matcher', () => {
+    const groups = buildHookEntries(HOOK).PostToolUse as { matcher?: string }[]
+    expect(groups.some((g) => g.matcher === 'mcp__ctx__.*')).toBe(true)
+  })
+
   it('is idempotent — merging twice is byte-identical', () => {
     const once = mergeHooks(REAL, HOOK)
     const twice = mergeHooks(once, HOOK)

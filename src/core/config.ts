@@ -24,6 +24,8 @@ export const DEFAULT_CONFIG: CtxConfig = {
   mcpMaxResultTokens: 2000,
   cochangeCommits: 1000,
   tokenAliases: {},
+  relatedOnRead: true,
+  cascadeReadLimit: 3,
   embeddings: {
     enabled: true,
     model: 'Xenova/all-MiniLM-L6-v2',

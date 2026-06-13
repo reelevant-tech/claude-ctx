@@ -52,7 +52,7 @@ describe('user-prompt-submit', () => {
       prompt: 'fix invoice rounding in createInvoice',
     })
     const ctx = out.hookSpecificOutput?.additionalContext ?? ''
-    expect(ctx).toContain('auto-context')
+    expect(ctx.toLowerCase()).toContain('start from these')
     expect(ctx).toContain('billing/invoice.ts')
   })
 
@@ -130,6 +130,52 @@ describe('post-tool + pre-read repeat detection', () => {
       tool_input: { file_path: target },
     })
     expect(out.hookSpecificOutput?.additionalContext ?? '').toContain('already read')
+  })
+})
+
+describe('post-tool auto-expand + index observation', () => {
+  it('injects the related neighbourhood after reading an indexed file, once per file', async () => {
+    const h = await importHandlers()
+    const target = join(ROOT, 'src/index.ts') // imports billing/invoice.ts in the fixture
+    const first = await h.postTool({ session_id: 'ar', cwd: ROOT, tool_name: 'Read', tool_input: { file_path: target } })
+    expect(first.hookSpecificOutput?.additionalContext ?? '').toContain('Related to src/index.ts')
+    // second read of the same file does not re-inject
+    const second = await h.postTool({ session_id: 'ar', cwd: ROOT, tool_name: 'Read', tool_input: { file_path: target } })
+    expect(second.hookSpecificOutput).toBeUndefined()
+  })
+
+  it('an mcp__ctx__ call resets the read-cascade streak', async () => {
+    const { loadState } = await import('../../src/core/memory/state')
+    const h = await importHandlers()
+    for (const f of ['src/index.ts', 'src/util/format.ts', 'src/billing/customer.ts']) {
+      await h.postTool({ session_id: 'rs', cwd: ROOT, tool_name: 'Read', tool_input: { file_path: join(ROOT, f) } })
+    }
+    expect(loadState(ROOT, 'rs').readStreak).toBe(3)
+    await h.postTool({ session_id: 'rs', cwd: ROOT, tool_name: 'mcp__ctx__context_pack', tool_input: { task: 'x' } })
+    expect(loadState(ROOT, 'rs').readStreak).toBe(0)
+  })
+})
+
+describe('pre-read cascade nudge', () => {
+  it('nudges toward context_pack after the cascade limit, referencing the task', async () => {
+    const h = await importHandlers()
+    await h.userPrompt({ session_id: 'cn', cwd: ROOT, prompt: 'wire up invoice rounding' })
+    for (const f of ['src/index.ts', 'src/util/format.ts', 'src/billing/customer.ts']) {
+      await h.postTool({ session_id: 'cn', cwd: ROOT, tool_name: 'Read', tool_input: { file_path: join(ROOT, f) } })
+    }
+    const out = await h.preRead({ session_id: 'cn', cwd: ROOT, tool_name: 'Read', tool_input: { file_path: join(ROOT, 'src/billing/invoice.ts') } })
+    const ctx = out.hookSpecificOutput?.additionalContext ?? ''
+    expect(ctx).toContain('mcp__ctx__context_pack')
+    expect(ctx).toContain('invoice rounding') // the task
+    expect(out.hookSpecificOutput?.permissionDecision).toBeUndefined() // guidance mode never blocks
+  })
+
+  it('does not nudge before the cascade limit', async () => {
+    const h = await importHandlers()
+    await h.userPrompt({ session_id: 'cn2', cwd: ROOT, prompt: 'work' })
+    await h.postTool({ session_id: 'cn2', cwd: ROOT, tool_name: 'Read', tool_input: { file_path: join(ROOT, 'src/index.ts') } })
+    const out = await h.preRead({ session_id: 'cn2', cwd: ROOT, tool_name: 'Read', tool_input: { file_path: join(ROOT, 'src/util/format.ts') } })
+    expect(out.hookSpecificOutput?.additionalContext ?? '').not.toContain('context_pack')
   })
 })
 
