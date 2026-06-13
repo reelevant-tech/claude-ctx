@@ -18,8 +18,9 @@ export function fileEmbeddingText(
 }
 
 /** Build the text embedded for a single symbol: path words + parent chain +
- * kind/name + the symbol's source span (bounded). Front-loads identifiers so a
- * small sentence model anchors on them. */
+ * kind/name + the symbol's leading doc-comment + its source span (bounded).
+ * Front-loads identifiers + the prose docstring so a small sentence model
+ * anchors on intent, not just code tokens. */
 export function symbolChunkText(
   rel: string,
   parentChain: string[],
@@ -30,9 +31,28 @@ export function symbolChunkText(
   parts.push(rel.replace(/[/_.\-]+/g, ' '))
   const heading = [...parentChain, `${node.k} ${node.n}`].filter(Boolean).join(' ')
   parts.push(heading)
+  const doc = leadingDoc(fileLines, node.l)
+  if (doc) parts.push(doc)
   const body = fileLines.slice(node.l - 1, node.endL).join('\n')
   parts.push(body.slice(0, 1000))
   return parts.join('\n').slice(0, 1400)
+}
+
+const DOC_LINE = /^(\/\/\/?!?|\/\*\*?|\*\/?|#!?\[|@[A-Za-z]|#\s|"""|'''|--\s|;;)/
+
+/** Contiguous comment/attribute block directly above a symbol (JSDoc, `///`,
+ * `#` doc, decorators, rust attributes). Stops at a blank line or real code. */
+function leadingDoc(fileLines: string[], startLine1: number, max = 16): string {
+  const collected: string[] = []
+  for (let i = startLine1 - 2; i >= 0 && collected.length < max; i--) {
+    const raw = fileLines[i]
+    if (raw === undefined) break
+    const t = raw.trim()
+    if (t === '') break
+    if (!DOC_LINE.test(t)) break
+    collected.unshift(t)
+  }
+  return collected.join('\n')
 }
 
 /** A symbol worth its own vector + the parent names leading to it. Flattens the

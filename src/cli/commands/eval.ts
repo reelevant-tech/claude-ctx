@@ -44,7 +44,16 @@ export async function run(argv: string[]): Promise<number> {
     return 1
   }
 
-  const agg = { lexical: 0, hybrid: 0, vector: 0, scored: 0 }
+  type ModeAgg = { h1: number; h3: number; hk: number; rr: number }
+  const blank = (): ModeAgg => ({ h1: 0, h3: 0, hk: 0, rr: 0 })
+  const agg = { lexical: blank(), hybrid: blank(), vector: blank(), scored: 0 }
+  const tally = (m: ModeAgg, rank: number) => {
+    if (rank <= 0) return
+    if (rank === 1) m.h1++
+    if (rank <= 3) m.h3++
+    if (rank <= k) m.hk++
+    m.rr += 1 / rank
+  }
   for (const q of queries) {
     const root = q.repo ? gitTopLevel(q.repo) ?? resolve(q.repo) : a.repo
     const idx = loadIndex(root)
@@ -101,18 +110,21 @@ export async function run(argv: string[]): Promise<number> {
       const lr = hitRank(lexPaths, q.expect)
       const hr = hitRank(hybPaths, q.expect)
       const vr = hitRank(vecPaths, q.expect)
-      if (lr > 0) agg.lexical++
-      if (hr > 0) agg.hybrid++
-      if (vr > 0) agg.vector++
+      tally(agg.lexical, lr)
+      tally(agg.hybrid, hr)
+      tally(agg.vector, vr)
       out(`  expect=${q.expect.join('|')}  rank(lex=${lr <= 0 ? 'MISS' : lr}, hyb=${hr <= 0 ? 'MISS' : hr}, vec=${vr <= 0 ? 'MISS' : vr})`)
     }
   }
 
   if (agg.scored > 0) {
-    out(`\n=== hit@${k} over ${agg.scored} labelled queries ===`)
-    out(`  lexical: ${agg.lexical}/${agg.scored}`)
-    out(`  hybrid:  ${agg.hybrid}/${agg.scored}`)
-    out(`  vector:  ${agg.vector}/${agg.scored}`)
+    const n = agg.scored
+    const row = (label: string, m: ModeAgg) =>
+      `  ${label}  hit@1 ${m.h1}/${n}   hit@3 ${m.h3}/${n}   hit@${k} ${m.hk}/${n}   MRR ${(m.rr / n).toFixed(3)}`
+    out(`\n=== retrieval quality over ${n} labelled queries ===`)
+    out(row('lexical', agg.lexical))
+    out(row('hybrid ', agg.hybrid))
+    out(row('vector ', agg.vector))
   }
   return 0
 }

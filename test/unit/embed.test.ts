@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { createStubEmbedder } from '../../src/core/embed/stub'
 import { fileEmbeddingText, flattenForChunks, symbolChunkText } from '../../src/core/embed/chunk'
+import { embeddableFiles } from '../../src/core/embed/build'
 import { dot, packVector, scoreEntries, unpackVector } from '../../src/core/embed/vectors'
-import type { SymbolNode, VectorsShard } from '../../src/core/types'
+import type { FileRecord, FilesShard, SymbolNode, VectorsShard } from '../../src/core/types'
 
 describe('vectors pack/unpack', () => {
   it('round-trips a Float32 vector through base64', () => {
@@ -78,6 +79,44 @@ describe('symbol chunking', () => {
     expect(t).toContain('crates core cards rs')
     expect(t).toContain('Card method shuffle')
     expect(t).toContain('reseed()')
+  })
+})
+
+describe('symbolChunkText leading doc-comment', () => {
+  it('prepends a JSDoc block sitting above the symbol', () => {
+    const src = [
+      "import { z } from 'zod'",
+      '/**',
+      ' * Creates an invoice for a customer with tax applied.',
+      ' */',
+      'export function createInvoice(c) { return rounding(c) }',
+    ]
+    const node: SymbolNode = { n: 'createInvoice', k: 'fn', l: 5, endL: 5, x: true, sig: 'export function createInvoice' }
+    const t = symbolChunkText('src/billing/invoice.ts', [], node, src)
+    expect(t).toContain('Creates an invoice for a customer with tax applied')
+    expect(t).toContain('createInvoice')
+    expect(t).toContain('rounding(c)')
+  })
+})
+
+describe('embeddableFiles exclusions', () => {
+  function rec(over: Partial<FileRecord>): FileRecord {
+    return { h: 'h', mtime: 0, size: 0, lines: 1, lang: 'ts', pkg: -1, parser: 'ts-api', kind: 'source', risk: [], entry: false, exports: [], externalDeps: [], docHeadings: [], tests: [], ...over }
+  }
+  it('excludes tests, fixtures, snapshots, generated, secret; keeps real source/doc/config', () => {
+    const files: FilesShard = {
+      files: {
+        'src/app.ts': rec({}),
+        'README.md': rec({ kind: 'doc', parser: 'lexical' }),
+        'package.json': rec({ kind: 'config', parser: 'none' }),
+        'src/app.test.ts': rec({ kind: 'test' }),
+        'e2e/fixtures/product.json': rec({ kind: 'config', parser: 'none' }),
+        'src/__snapshots__/x.snap': rec({ kind: 'config', parser: 'none' }),
+        'dist/bundle.js': rec({ kind: 'generated', risk: ['generated'] }),
+        '.env': rec({ kind: 'secret', parser: 'none' }),
+      },
+    }
+    expect(embeddableFiles(files)).toEqual(['README.md', 'package.json', 'src/app.ts'])
   })
 })
 

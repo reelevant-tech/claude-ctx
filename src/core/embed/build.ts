@@ -13,13 +13,22 @@ const chunkHash = (text: string): string => createHash('sha1').update(text).dige
 
 const MAX_SYMBOL_CHUNKS_PER_FILE = 60
 
-/** Files worth embedding: real source/test/config/doc content. Excludes
- * secrets/assets/vendor AND generated code (noise). */
-function embeddableFiles(files: FilesShard): string[] {
+// Pure test data / snapshots: high semantic-noise, never a code-retrieval target.
+const NOISE_PATH = /(^|\/)(fixtures?|__fixtures__|__snapshots__|testdata|test-data)(\/)|\.snap$/i
+
+/**
+ * Files worth embedding: real source/doc/config content. Excludes
+ * secrets/assets/vendor, generated code, test files, and fixture/snapshot data.
+ * Tests stay in the lexical+structural index (symbol_search/find_tests) but are
+ * kept out of the vector space — embedding them crowded real source out of the
+ * top results in benchmarks.
+ */
+export function embeddableFiles(files: FilesShard): string[] {
   const out: string[] = []
   for (const [rel, rec] of Object.entries(files.files)) {
-    if (rec.kind === 'secret' || rec.kind === 'asset' || rec.kind === 'vendor') continue
+    if (rec.kind === 'secret' || rec.kind === 'asset' || rec.kind === 'vendor' || rec.kind === 'test') continue
     if (rec.risk.includes('generated') || rec.risk.includes('vendor')) continue
+    if (NOISE_PATH.test(rel)) continue
     if (rec.parser === 'none' && rec.kind !== 'doc' && rec.kind !== 'config') continue
     out.push(rel)
   }

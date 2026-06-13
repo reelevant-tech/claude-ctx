@@ -41,7 +41,8 @@ describe('ctx eval', () => {
     expect(text).toContain('lexical')
     expect(text).toContain('hybrid')
     expect(text).toContain('hit@8')
-    // lexical alone should already find the invoice file
-    expect(text).toMatch(/lexical: 1\/1/)
+    expect(text).toContain('MRR')
+    // lexical alone should already find the invoice file at rank 1
+    expect(text).toMatch(/lexical\s+hit@1 1\/1/)
   })
 })
