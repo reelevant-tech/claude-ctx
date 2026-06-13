@@ -1,0 +1,14 @@
+{
+  "name": "ts-app",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "vitest run",
+    "build": "tsc -p .",
+    "dev": "node src/index.ts",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "zod": "^3.23.0"
+  }
+}
