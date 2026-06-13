@@ -85,7 +85,7 @@ This is deliberately **not** a global call graph: cross-file call resolution in 
 
 ## Hybrid semantic retrieval (local, offline)
 
-By default the router is lexical + structural (symbols, paths, import graph, git signals). You can additionally enable a **local embeddings layer** for Cursor-style semantic retrieval — finding files by meaning even when they share no words with your task (e.g. "remember what I worked on" → the session-memory code, "stop the AI from wiping files" → the bash guard).
+By default the router is lexical + structural (symbols, paths, import graph, git signals). The lexical core is **BM25F**: each file is a multi-field document (basename, exported symbols, path segments, doc headings) whose field boosts act as term frequencies, scored with one BM25 saturation (`k1=1.5`) + document-length normalization (`b=0.75`) and BM25 IDF. Length normalization counters the "huge file matches everything" bias, and the normalized lexical score (0–100) fuses with the structural boosts (recency, centrality, test-link, …), the query-relative semantic score, and risk penalties. You can additionally enable a **local embeddings layer** for Cursor-style semantic retrieval — finding files by meaning even when they share no words with your task (e.g. "remember what I worked on" → the session-memory code, "stop the AI from wiping files" → the bash guard).
 
 ```bash
 node dist/cli.cjs embed-setup        # installs a small model (transformers.js, WASM — no native deps)

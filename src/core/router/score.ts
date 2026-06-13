@@ -12,8 +12,23 @@ const RISK_VOCAB = new Set([
 
 const round1 = (n: number): number => Math.round(n * 10) / 10
 
-interface Match {
-  pts: number
+// BM25F: each file is a multi-field document. Field boosts act as within-field
+// term frequencies; a term present in several fields sums their boosts. One BM25
+// saturation (k1) + length normalization (b) is then applied. Document length is
+// the weighted field size, so symbol-dense files get length-normalized down —
+// the BM25 cure for "huge file matches everything".
+const BM25_K1 = 1.5
+const BM25_B = 0.75
+const F_NAME = 5 // basename
+const F_EXPORT = 4 // exported/pub symbol name
+const F_SEG = 3 // path segment
+const F_SYM = 2 // any symbol sub-token
+const F_HEAD = 1.5 // doc heading
+const F_PATHSUB = 1 // fuzzy path substring (fallback)
+
+interface TermHit {
+  /** BM25F field-weighted term frequency */
+  tf: number
   reason: string
 }
 
@@ -30,6 +45,8 @@ interface FileCtx {
   subSyms: Map<string, string>
   /** sub-token -> heading text */
   headSubs: Map<string, string>
+  /** weighted document length (Σ fieldBoost · fieldSize) for BM25 length norm */
+  docLen: number
 }
 
 function buildCtx(path: string, rec: FileRecord, syms: SymbolRecord[]): FileCtx {
@@ -56,33 +73,61 @@ function buildCtx(path: string, rec: FileRecord, syms: SymbolRecord[]): FileCtx 
   for (const h of rec.docHeadings) {
     for (const sub of splitIdentifier(h)) if (!headSubs.has(sub)) headSubs.set(sub, h)
   }
+  const segs = new Set(path.toLowerCase().split('/'))
+  const baseJoined = splitIdentifier(baseSansExt).join('')
+  const nameSize = baseJoined.length > 0 && baseJoined !== baseSansExt.toLowerCase() ? 2 : 1
+  const docLen =
+    F_NAME * nameSize +
+    F_EXPORT * exactSyms.size +
+    F_SEG * segs.size +
+    F_SYM * subSyms.size +
+    F_HEAD * headSubs.size
   return {
     path,
     rec,
     base: baseSansExt.toLowerCase(),
-    baseJoined: splitIdentifier(baseSansExt).join(''),
-    segs: new Set(path.toLowerCase().split('/')),
+    baseJoined,
+    segs,
     pathLower: path.toLowerCase(),
     exactSyms,
     subSyms,
     headSubs,
+    docLen,
   }
 }
 
-/** Best single match of token t against a file, checked strongest-first. */
-function bestMatch(t: string, ctx: FileCtx): Match | null {
+/** BM25F field-weighted term frequency of t in a file (sum across fields it hits),
+ * plus the strongest field for the human-readable reason. Null if absent. */
+function termMatch(t: string, ctx: FileCtx): TermHit | null {
+  let tf = 0
+  let bestBoost = 0
+  let reason = ''
+  const consider = (boost: number, r: string) => {
+    tf += boost
+    if (boost > bestBoost) {
+      bestBoost = boost
+      reason = r
+    }
+  }
   if (t === ctx.base || (ctx.baseJoined.length > 0 && t === ctx.baseJoined)) {
-    return { pts: 5.0, reason: `matches '${t}' in filename` }
+    consider(F_NAME, `matches '${t}' in filename`)
   }
   const exact = ctx.exactSyms.get(t)
-  if (exact !== undefined) return { pts: 4.0, reason: `matches '${t}' in exported symbol ${exact}` }
-  if (ctx.segs.has(t)) return { pts: 3.0, reason: `matches '${t}' in path segment` }
+  if (exact !== undefined) consider(F_EXPORT, `matches '${t}' in exported symbol ${exact}`)
+  if (ctx.segs.has(t)) consider(F_SEG, `matches '${t}' in path segment`)
   const sub = ctx.subSyms.get(t)
-  if (sub !== undefined) return { pts: 2.0, reason: `matches '${t}' in symbol ${sub}` }
+  if (sub !== undefined) consider(F_SYM, `matches '${t}' in symbol ${sub}`)
   const head = ctx.headSubs.get(t)
-  if (head !== undefined) return { pts: 1.5, reason: `matches '${t}' in doc heading "${head}"` }
-  if (t.length >= 4 && ctx.pathLower.includes(t)) return { pts: 1.0, reason: `matches '${t}' in path` }
-  return null
+  if (head !== undefined) consider(F_HEAD, `matches '${t}' in doc heading "${head}"`)
+  if (tf === 0 && t.length >= 4 && ctx.pathLower.includes(t)) {
+    consider(F_PATHSUB, `matches '${t}' in path`)
+  }
+  return tf > 0 ? { tf, reason } : null
+}
+
+/** BM25 inverse document frequency (always-positive variant). */
+function bm25Idf(df: number, n: number): number {
+  return Math.log(1 + (n - df + 0.5) / (df + 0.5))
 }
 
 interface Work {
@@ -154,30 +199,35 @@ export function scoreFiles(
     else symsByFile.set(s.f, [s])
   }
 
-  // all (token, file) matches in one sweep — df derives from the same matches that score
+  // one sweep: per-(token,file) field-weighted tf, df per token, and the corpus
+  // average document length needed for BM25 length normalization.
   const ctxs: FileCtx[] = []
-  const matches: (Match | null)[][] = []
+  const hits: (TermHit | null)[][] = []
   const ctxByPath = new Map<string, FileCtx>()
   const df = new Array<number>(taskTokens.length).fill(0)
+  let totalDocLen = 0
   for (const p of paths) {
     const rec = idx.files.files[p]
     if (!rec) continue
     const ctx = buildCtx(p, rec, symsByFile.get(p) ?? [])
-    const row: (Match | null)[] = []
+    totalDocLen += ctx.docLen
+    const row: (TermHit | null)[] = []
     for (let i = 0; i < taskTokens.length; i++) {
       const tt = taskTokens[i]
-      const m = tt ? bestMatch(tt.t, ctx) : null
-      row.push(m)
-      if (m) df[i] = (df[i] ?? 0) + 1
+      const h = tt ? termMatch(tt.t, ctx) : null
+      row.push(h)
+      if (h) df[i] = (df[i] ?? 0) + 1
     }
     ctxs.push(ctx)
-    matches.push(row)
+    hits.push(row)
     ctxByPath.set(p, ctx)
   }
 
-  const w = taskTokens.map((tt, i) => (1 + Math.log(N / Math.max(1, df[i] ?? 0))) * tt.q)
+  const avgdl = totalDocLen / N || 1
+  // per-token IDF × query weight (alias tokens carry reduced q)
+  const idfq = taskTokens.map((tt, i) => bm25Idf(df[i] ?? 0, N) * tt.q)
 
-  // stage 1: lexical score
+  // stage 1: BM25F lexical score per file
   interface Raw {
     ctx: FileCtx
     L: number
@@ -188,16 +238,17 @@ export function scoreFiles(
   let maxL = 0
   for (let fi = 0; fi < ctxs.length; fi++) {
     const ctx = ctxs[fi]
-    const row = matches[fi]
+    const row = hits[fi]
     if (!ctx || !row) continue
+    const norm = BM25_K1 * (1 - BM25_B + BM25_B * (ctx.docLen / avgdl))
     let L = 0
     const tokenReasons: ScoreReason[] = []
     for (let i = 0; i < row.length; i++) {
-      const m = row[i]
-      if (!m) continue
-      const contrib = (w[i] ?? 0) * m.pts
+      const h = row[i]
+      if (!h) continue
+      const contrib = (idfq[i] ?? 0) * ((h.tf * (BM25_K1 + 1)) / (h.tf + norm))
       L += contrib
-      tokenReasons.push({ reason: m.reason, points: round1(contrib) })
+      tokenReasons.push({ reason: h.reason, points: round1(contrib) })
     }
     if (L <= 0) continue
     if (L > maxL) maxL = L
@@ -223,11 +274,14 @@ export function scoreFiles(
   const works: Work[] = raws.map((raw) => {
     const { ctx } = raw
     const rec = ctx.rec
+    // scale raw BM25 term contributions into the same 0-100 space as the boosts
+    // so reasons sort comparably (a strong lexical hit outranks a +15 recency).
+    const scale = maxL > 0 ? 100 / maxL : 0
     const wrk: Work = {
       path: ctx.path,
       rec,
       lhat: maxL > 0 ? raw.L / maxL : 0,
-      tokenReasons: raw.tokenReasons,
+      tokenReasons: raw.tokenReasons.map((r) => ({ reason: r.reason, points: round1(r.points * scale) })),
       penalties: [],
       base: 0,
     }
@@ -267,8 +321,10 @@ export function scoreFiles(
       wrk.inspected = { reason: 'already inspected this session', points: 4 }
     }
     if (!waived) {
-      if (rec.risk.includes('generated')) wrk.penalties.push({ reason: 'generated file', points: -60 })
-      if (rec.risk.includes('vendor')) wrk.penalties.push({ reason: 'vendor file', points: -80 })
+      // BM25's tf-saturation compresses the score gap, so a generated file that
+      // shares a strong term can score high; bury it harder than the linear scheme did.
+      if (rec.risk.includes('generated')) wrk.penalties.push({ reason: 'generated file', points: -75 })
+      if (rec.risk.includes('vendor')) wrk.penalties.push({ reason: 'vendor file', points: -90 })
       if (rec.risk.includes('infra')) wrk.penalties.push({ reason: 'infra file', points: -15 })
     }
     if (rec.risk.includes('huge') || rec.lines > 3000) {
