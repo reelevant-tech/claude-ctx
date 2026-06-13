@@ -12,7 +12,11 @@ export function renderPack(pack: ContextPack): string {
     lines.push('**Likely relevant files:**')
     for (const f of pack.files) {
       let line = `- ${f.path} — ${f.why.join('; ')}`
-      if (f.tests.length > 0) line += ` (tests: ${f.tests.join(', ')})`
+      if (f.tests.length > 0) {
+        const shown = f.tests.slice(0, 3).join(', ')
+        const more = f.tests.length > 3 ? ` +${f.tests.length - 3} more` : ''
+        line += ` (tests: ${shown}${more})`
+      }
       if (f.risk.length > 0) line += ` [${f.risk.join(', ')}]`
       lines.push(line)
     }
