@@ -7,6 +7,8 @@ import { run as embedSetup } from '../cli/commands/embed-setup'
 import { run as evalCmd } from '../cli/commands/eval'
 import { run as references } from '../cli/commands/references'
 import { run as trace } from '../cli/commands/trace-symbol'
+import { run as body } from '../cli/commands/symbol-body'
+import { run as callChainCmd } from '../cli/commands/call-chain'
 import { run as symbolTree } from '../cli/commands/symbol-tree'
 import { run as indexCmd } from '../cli/commands/index-cmd'
 import { run as init } from '../cli/commands/init'
@@ -39,7 +41,9 @@ const COMMANDS: Record<string, { run: Cmd; help: string }> = {
   symbol_tree: { run: symbolTree, help: 'nested symbol tree of a file (AST)' },
   calls: { run: calls, help: 'intra-file call expressions in a file (best-effort)' },
   references: { run: references, help: 'find references to a symbol (TypeScript-aware)' },
-  trace: { run: trace, help: 'trace a symbol: definition, refs, callees, import paths' },
+  trace: { run: trace, help: 'trace a symbol: definition, refs, callees, import paths (--kind calls)' },
+  body: { run: body, help: 'full source body of a symbol: ctx body <symbol> [--max-lines N]' },
+  'call-chain': { run: callChainCmd, help: 'best-effort cross-file call chain: ctx call-chain <symbol> [--depth N]' },
   tests: { run: testsCmd, help: 'tests covering a path + how to run them' },
   recent: { run: recent, help: 'recently changed files (--days --limit)' },
   vectors: { run: vectors, help: 'semantic index stats, or nearest chunks: ctx vectors "<query>"' },

@@ -67,4 +67,25 @@ describe('mcp trace_symbol', () => {
     expect(txt).toMatch(/\d+ symbols? match "createInvoice" across \d+ files?:/)
     expect(txt).toContain('createInvoice')
   })
+
+  it('trace_symbol kind:"calls" filters to call-sites only', () => {
+    const txt = toolImpls.trace_symbol!(ROOT, { symbol: 'createInvoice', kind: 'calls' })
+    expect(txt).toContain('**Call-sites**')
+    expect(txt).not.toContain('(roles: def/call/use)')
+  })
+
+  it('symbol_body returns the full source body of a symbol', () => {
+    expect(Object.keys(toolImpls)).toContain('symbol_body')
+    const txt = toolImpls.symbol_body!(ROOT, { symbol: 'createInvoice' })
+    expect(txt).toContain('createInvoice — src/billing/invoice.ts:')
+    expect(txt).toContain('```')
+    expect(txt).toContain('function createInvoice')
+  })
+
+  it('call_chain builds a best-effort execution flow', () => {
+    expect(Object.keys(toolImpls)).toContain('call_chain')
+    const txt = toolImpls.call_chain!(ROOT, { symbol: 'createInvoice' })
+    expect(txt).toContain('call_chain: createInvoice')
+    expect(txt).toContain('→ parse()')
+  })
 })

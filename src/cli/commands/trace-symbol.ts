@@ -6,6 +6,7 @@ export async function run(argv: string[]): Promise<number> {
   const a = parseCommon(argv, {
     file: { type: 'string' },
     depth: { type: 'string' },
+    kind: { type: 'string' },
   })
   const idx = requireIndex(a.repo)
   if (!idx) return 1
@@ -25,7 +26,8 @@ export async function run(argv: string[]): Promise<number> {
     out(JSON.stringify(result, null, 2))
     return 0
   }
-  out(renderTraceSymbol(a.repo, result))
+  const kind = a.values.kind === 'calls' ? 'calls' : 'all'
+  out(renderTraceSymbol(a.repo, result, { kind }))
   return 0
 }
 

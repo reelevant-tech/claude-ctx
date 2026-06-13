@@ -5,7 +5,7 @@ import { shortestPaths } from '../indexer/graph'
 import { relatedFiles } from '../related'
 import { loadShard } from '../store/shards'
 import { searchSymbols } from '../../cli/commands/symbols'
-import { resolveReferences } from '../../cli/commands/references'
+import { callSiteSet, resolveReferences } from '../../cli/commands/references'
 import type { CallsShard, LoadedIndex } from '../types'
 
 const ARROW = ' → '
@@ -78,7 +78,11 @@ export function traceSymbol(
   }
 }
 
-export function renderTraceSymbol(root: string, trace: TraceSymbolResult): string {
+export function renderTraceSymbol(
+  root: string,
+  trace: TraceSymbolResult,
+  opts?: { kind?: 'calls' | 'all' },
+): string {
   const lines: string[] = [`## trace: ${trace.symbol}`]
   const def = trace.definition
   if (def) {
@@ -92,29 +96,26 @@ export function renderTraceSymbol(root: string, trace: TraceSymbolResult): strin
 
   // Role tagging is grounded in the AST `calls` shard: a reference whose file:line
   // is a known call expression for this symbol is a CALL; the definition site is DEF;
-  // everything else is a USE (value/type/import). The finer TYPE-USE vs IMPORT split
-  // needs the deferred typed cross-file data-flow work — see plan "data-flow tracer".
+  // everything else is a USE (value/type/import). kind:'calls' keeps only call-sites
+  // (drops imports/type-uses) — the high-signal subset when following execution flow.
   const shard = loadShard<CallsShard>(root, 'calls')
-  const callLines = new Set<string>()
-  if (shard) {
-    for (const file of Object.keys(shard.calls)) {
-      for (const c of shard.calls[file]!) {
-        if (c.callee === trace.symbol) callLines.add(`${file}:${c.line}`)
-      }
-    }
-  }
+  const callLines = callSiteSet(shard, trace.symbol)
+  const callsOnly = opts?.kind === 'calls'
 
-  const { refs, source } = trace.references
+  const { refs: allRefs, source } = trace.references
+  const refs = callsOnly ? allRefs.filter((r) => callLines.has(`${r.file}:${r.line}`)) : allRefs
   const srcNote =
     source === 'typescript'
       ? 'typed, complete within indexed TS files'
       : 'name-based (call-sites only; may miss type/import uses & over-match common names)'
   if (refs.length === 0) {
-    lines.push(`**References:** none — ${srcNote}`)
+    lines.push(callsOnly ? `**Call-sites:** none (${source})` : `**References:** none — ${srcNote}`)
   } else {
     const rfiles = new Set(refs.map((r) => r.file)).size
     lines.push(
-      `**References** — ${srcNote} · ${refs.length} ref${refs.length === 1 ? '' : 's'} across ${rfiles} file${rfiles === 1 ? '' : 's'} (roles: def/call/use):`,
+      callsOnly
+        ? `**Call-sites** — ${refs.length} across ${rfiles} file${rfiles === 1 ? '' : 's'}:`
+        : `**References** — ${srcNote} · ${refs.length} ref${refs.length === 1 ? '' : 's'} across ${rfiles} file${rfiles === 1 ? '' : 's'} (roles: def/call/use):`,
     )
     for (const r of refs) {
       const role =
@@ -123,7 +124,7 @@ export function renderTraceSymbol(root: string, trace: TraceSymbolResult): strin
           : callLines.has(`${r.file}:${r.line}`)
             ? 'call'
             : 'use'
-      let row = `  [${role}] ${r.file}:${r.line}`
+      let row = callsOnly ? `  ${r.file}:${r.line}` : `  [${role}] ${r.file}:${r.line}`
       if (r.caller) row += `  in ${r.caller}()`
       lines.push(row)
       if (r.snippet) lines.push(`    ${r.snippet}`)
@@ -154,6 +155,8 @@ export function renderTraceSymbol(root: string, trace: TraceSymbolResult): strin
     for (const p of trace.importPaths) lines.push(`  ${p.join(ARROW)}`)
   }
 
-  lines.push(`_Expand: mcp__ctx__references('${trace.symbol}'), mcp__ctx__related_files('${def?.file ?? ''}')_`)
+  lines.push(
+    `_Expand: mcp__ctx__symbol_body('${trace.symbol}') for the full body · mcp__ctx__call_chain('${trace.symbol}') for execution flow · trace_symbol(kind:'calls') for call-sites only_`,
+  )
   return lines.join('\n')
 }

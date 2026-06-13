@@ -13,6 +13,16 @@ export interface Reference {
 
 export type ReferencesSource = 'typescript' | 'name-based'
 
+/** Set of `${file}:${line}` where `symbol` appears as a call expression (AST ground truth). */
+export function callSiteSet(shard: CallsShard | null, symbol: string): Set<string> {
+  const s = new Set<string>()
+  if (!shard) return s
+  for (const file of Object.keys(shard.calls)) {
+    for (const c of shard.calls[file]!) if (c.callee === symbol) s.add(`${file}:${c.line}`)
+  }
+  return s
+}
+
 /** Name-based call sites of a symbol across all files (ignores shadowing/overloads). */
 export function findReferencesByName(shard: CallsShard, symbol: string): Reference[] {
   const refs: Reference[] = []
