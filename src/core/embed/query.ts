@@ -47,7 +47,7 @@ export async function semanticScores(
     return undefined
   }
   try {
-    const [qv] = await embedder.embed([task])
+    const [qv] = await embedder.embed([task], 'query')
     if (!qv || qv.length !== shard.dim) {
       debugWarn(`dim mismatch (shard=${shard.dim} query=${qv?.length}) — lexical fallback`)
       return undefined

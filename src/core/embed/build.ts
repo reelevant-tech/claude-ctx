@@ -145,7 +145,7 @@ export async function buildVectors(
   const BATCH = 32
   for (let i = 0; i < pending.length; i += BATCH) {
     const batch = pending.slice(i, i + BATCH)
-    const vecs = await embedder.embed(batch.map((p) => p.text))
+    const vecs = await embedder.embed(batch.map((p) => p.text), 'passage')
     for (let j = 0; j < batch.length; j++) {
       const v = vecs[j]
       if (!v) continue

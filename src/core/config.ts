@@ -27,6 +27,8 @@ export const DEFAULT_CONFIG: CtxConfig = {
     enabled: true,
     model: 'Xenova/all-MiniLM-L6-v2',
     weight: 0.5,
+    queryPrefix: '',
+    passagePrefix: '',
   },
 }
 

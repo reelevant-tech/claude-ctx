@@ -395,6 +395,10 @@ export interface CtxConfig {
     model: string
     /** hybrid fusion weight: semantic boost = weight * 100 * max(0, cosine - floor) */
     weight: number
+    /** prefix prepended to a QUERY before embedding (e5/nomic need this, e.g. "query: ") */
+    queryPrefix?: string
+    /** prefix prepended to a PASSAGE/chunk before embedding (e.g. "passage: ") */
+    passagePrefix?: string
   }
 }
 

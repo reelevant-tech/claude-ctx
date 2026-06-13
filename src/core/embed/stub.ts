@@ -9,7 +9,7 @@ export function createStubEmbedder(dim = 64): Embedder {
   return {
     model: 'stub',
     dim,
-    async embed(texts: string[]): Promise<Float32Array[]> {
+    async embed(texts: string[], _role?: 'query' | 'passage'): Promise<Float32Array[]> {
       return texts.map((t) => {
         const v = new Float32Array(dim)
         for (const tok of t.toLowerCase().split(/[^a-z0-9]+/)) {

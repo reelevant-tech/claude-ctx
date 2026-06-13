@@ -16,6 +16,8 @@ interface EvalQuery {
   repo?: string
   /** path/symbol substrings that count as a correct hit (case-insensitive) */
   expect?: string[]
+  /** optional bucket label for split reporting (e.g. "fr", "code") */
+  group?: string
 }
 
 function hitRank(paths: string[], expect: string[] | undefined): number {
@@ -45,14 +47,30 @@ export async function run(argv: string[]): Promise<number> {
   }
 
   type ModeAgg = { h1: number; h3: number; hk: number; rr: number }
+  type Bucket = { lexical: ModeAgg; hybrid: ModeAgg; vector: ModeAgg; scored: number }
   const blank = (): ModeAgg => ({ h1: 0, h3: 0, hk: 0, rr: 0 })
-  const agg = { lexical: blank(), hybrid: blank(), vector: blank(), scored: 0 }
+  const newBucket = (): Bucket => ({ lexical: blank(), hybrid: blank(), vector: blank(), scored: 0 })
+  const buckets = new Map<string, Bucket>([['overall', newBucket()]])
   const tally = (m: ModeAgg, rank: number) => {
     if (rank <= 0) return
     if (rank === 1) m.h1++
     if (rank <= 3) m.h3++
     if (rank <= k) m.hk++
     m.rr += 1 / rank
+  }
+  const record = (group: string | undefined, lr: number, hr: number, vr: number) => {
+    const keys = group ? ['overall', group] : ['overall']
+    for (const key of keys) {
+      let b = buckets.get(key)
+      if (!b) {
+        b = newBucket()
+        buckets.set(key, b)
+      }
+      b.scored++
+      tally(b.lexical, lr)
+      tally(b.hybrid, hr)
+      tally(b.vector, vr)
+    }
   }
   for (const q of queries) {
     const root = q.repo ? gitTopLevel(q.repo) ?? resolve(q.repo) : a.repo
@@ -82,7 +100,7 @@ export async function run(argv: string[]): Promise<number> {
     if (shard && Array.isArray(shard.entries) && shard.entries.length > 0) {
       const embedder = await loadEmbedder(cfg)
       if (embedder && embedder.model === shard.model) {
-        const [qv] = await embedder.embed([q.query])
+        const [qv] = await embedder.embed([q.query], 'query')
         if (qv && qv.length === shard.dim) {
           const scored = shard.entries
             .map((e) => ({ e, cos: dot(qv, unpackVector(e.vec, shard.dim)) }))
@@ -106,25 +124,27 @@ export async function run(argv: string[]): Promise<number> {
     if (vecLabels.length) fmt('vector ', vecPaths, vecLabels)
 
     if (q.expect && q.expect.length) {
-      agg.scored++
       const lr = hitRank(lexPaths, q.expect)
       const hr = hitRank(hybPaths, q.expect)
       const vr = hitRank(vecPaths, q.expect)
-      tally(agg.lexical, lr)
-      tally(agg.hybrid, hr)
-      tally(agg.vector, vr)
-      out(`  expect=${q.expect.join('|')}  rank(lex=${lr <= 0 ? 'MISS' : lr}, hyb=${hr <= 0 ? 'MISS' : hr}, vec=${vr <= 0 ? 'MISS' : vr})`)
+      record(q.group, lr, hr, vr)
+      out(`  expect=${q.expect.join('|')}${q.group ? ` [${q.group}]` : ''}  rank(lex=${lr <= 0 ? 'MISS' : lr}, hyb=${hr <= 0 ? 'MISS' : hr}, vec=${vr <= 0 ? 'MISS' : vr})`)
     }
   }
 
-  if (agg.scored > 0) {
-    const n = agg.scored
-    const row = (label: string, m: ModeAgg) =>
-      `  ${label}  hit@1 ${m.h1}/${n}   hit@3 ${m.h3}/${n}   hit@${k} ${m.hk}/${n}   MRR ${(m.rr / n).toFixed(3)}`
-    out(`\n=== retrieval quality over ${n} labelled queries ===`)
-    out(row('lexical', agg.lexical))
-    out(row('hybrid ', agg.hybrid))
-    out(row('vector ', agg.vector))
+  const overall = buckets.get('overall')!
+  if (overall.scored > 0) {
+    const report = (title: string, b: Bucket) => {
+      const n = b.scored
+      const row = (label: string, m: ModeAgg) =>
+        `  ${label}  hit@1 ${m.h1}/${n}   hit@3 ${m.h3}/${n}   hit@${k} ${m.hk}/${n}   MRR ${(m.rr / n).toFixed(3)}`
+      out(`\n=== ${title} (${n} queries) ===`)
+      out(row('lexical', b.lexical))
+      out(row('hybrid ', b.hybrid))
+      out(row('vector ', b.vector))
+    }
+    report('retrieval quality', overall)
+    for (const [key, b] of buckets) if (key !== 'overall') report(`group: ${key}`, b)
   }
   return 0
 }

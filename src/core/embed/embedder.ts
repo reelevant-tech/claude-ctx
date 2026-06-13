@@ -13,11 +13,14 @@ import { pathToFileURL } from 'node:url'
 import { dataDir } from '../paths'
 import type { CtxConfig } from '../types'
 
+export type EmbedRole = 'query' | 'passage'
+
 export interface Embedder {
   model: string
   dim: number
-  /** L2-normalized embeddings, one Float32Array per input text. */
-  embed(texts: string[]): Promise<Float32Array[]>
+  /** L2-normalized embeddings, one Float32Array per input text. `role` selects
+   * the configured prefix (e5/nomic need "query:"/"passage:"); default passage. */
+  embed(texts: string[], role?: EmbedRole): Promise<Float32Array[]>
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -59,15 +62,19 @@ export async function loadEmbedder(cfg: CtxConfig): Promise<Embedder | null> {
     tf.env.cacheDir = join(dataDir(), 'models')
     tf.env.allowRemoteModels = true // download once, then served from cache
     const extractor = await tf.pipeline('feature-extraction', cfg.embeddings.model, { dtype: 'q8' })
+    const queryPrefix = cfg.embeddings.queryPrefix ?? ''
+    const passagePrefix = cfg.embeddings.passagePrefix ?? ''
     let dim = 0
     const embedder: Embedder = {
       model: cfg.embeddings.model,
       get dim() {
         return dim
       },
-      async embed(texts: string[]): Promise<Float32Array[]> {
+      async embed(texts: string[], role: 'query' | 'passage' = 'passage'): Promise<Float32Array[]> {
         if (texts.length === 0) return []
-        const t = await extractor(texts, { pooling: 'mean', normalize: true })
+        const prefix = role === 'query' ? queryPrefix : passagePrefix
+        const input = prefix ? texts.map((t) => prefix + t) : texts
+        const t = await extractor(input, { pooling: 'mean', normalize: true })
         const [n, d] = t.dims as [number, number]
         dim = d
         const data = t.data as Float32Array
