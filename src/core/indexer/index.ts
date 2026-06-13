@@ -27,7 +27,10 @@ import type {
   SymbolsShard,
   SymbolTreeShard,
 } from '../types'
-import { repoId } from '../paths'
+import { rmSync } from 'node:fs'
+import { gitIdentity } from '../git'
+import { legacyIndexDir, repoId, repoIdentity, repoJsonPath } from '../paths'
+import { writeFileAtomic } from '../store/shards'
 import { extractRust } from '../ast/rust'
 import { extractTsTree } from '../ast/ts-tree'
 import { extractCommands } from './commands'
@@ -232,7 +235,7 @@ function buildSymbolsShard(records: Map<string, FileRecord>, parses: Map<string,
       symbols.push(sym)
     }
   }
-  const tokenIndex: Record<string, number[]> = {}
+  const tokenIndex: Record<string, number[]> = Object.create(null)
   symbols.forEach((s, i) => {
     const toks = new Set<string>([s.n.toLowerCase(), ...splitIdentifier(s.n)])
     for (const t of toks) {
@@ -291,6 +294,21 @@ function writeShards(
   saveShard(root, 'calls', calls)
   saveShard(root, 'meta', meta)
   clearPending(root)
+}
+
+/** Persist repo-level identity (one per repo, shared across branches). */
+function writeRepoJson(root: string, meta: IndexMeta): void {
+  if (!meta.repo) return
+  writeFileAtomic(repoJsonPath(root), JSON.stringify(meta.repo))
+}
+
+/** Remove the pre-branch-keyed index dir so it can't be confused with the new layout. */
+function dropLegacyIndex(root: string): void {
+  try {
+    rmSync(legacyIndexDir(root), { recursive: true, force: true })
+  } catch {
+    /* best-effort */
+  }
 }
 
 export async function buildIndex(
@@ -374,8 +392,12 @@ async function fullBuild(root: string, cfg: CtxConfig): Promise<IndexStats> {
     }
     const hc = headCommit(root)
     if (hc) meta.headCommit = hc
+    meta.repo = repoIdentity(root)
+    meta.gitId = gitIdentity(root)
 
     writeShards(root, meta, filesShard, symbols, graph, git, commands, { trees, parsers: treeParsers }, { calls: callsByFile })
+    writeRepoJson(root, meta)
+    dropLegacyIndex(root)
     return {
       fileCount: records.size,
       skippedCount: skipped,
@@ -523,6 +545,8 @@ async function tryIncremental(root: string, cfg: CtxConfig, meta: IndexMeta): Pr
     if (hc) newMeta.headCommit = hc
     else delete newMeta.headCommit
     delete newMeta.partial
+    newMeta.repo = repoIdentity(root)
+    newMeta.gitId = gitIdentity(root)
 
     // Patch symtree/calls: keep entries for surviving files, replace changed ones.
     const oldSymtree = loadShard<SymbolTreeShard>(root, 'symtree') ?? { trees: {}, parsers: {} }
@@ -548,6 +572,7 @@ async function tryIncremental(root: string, cfg: CtxConfig, meta: IndexMeta): Pr
 
     const commands = extractCommands(root, meta.packages)
     writeShards(root, newMeta, { files: filesObj }, symbols, graph, git, commands, { trees, parsers: treeParsers }, { calls: callsByFile })
+    writeRepoJson(root, newMeta)
     return {
       fileCount: records.size,
       skippedCount: scan.skippedCount,
@@ -577,7 +602,7 @@ function rebuildSymbolsIncremental(
     }
   }
   const all = [...kept, ...fresh].sort((a, b) => (a.f < b.f ? -1 : a.f > b.f ? 1 : a.l - b.l))
-  const tokenIndex: Record<string, number[]> = {}
+  const tokenIndex: Record<string, number[]> = Object.create(null)
   all.forEach((s, i) => {
     const toks = new Set<string>([s.n.toLowerCase(), ...splitIdentifier(s.n)])
     for (const t of toks) {

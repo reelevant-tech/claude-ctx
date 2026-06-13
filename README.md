@@ -43,7 +43,11 @@ Global flags: `--repo <path>` (default cwd, resolved to the git root), `--json`.
 
 | Command | What it does |
 |---|---|
-| `ctx index [--full]` | build / refresh the repo index |
+| `ctx index [--full]` | index the current git repo (git top-level, not cwd) |
+| `ctx index --all` | discover & index every git repo under the cwd |
+| `ctx index --workspace <p>` | discover & index every git repo under `<p>` |
+| `ctx repos` | list indexed repos (repoId, root, branches, current) |
+| `ctx branches --repo <name\|id>` | list indexed branches for a repo |
 | `ctx overview` | project type, packages, entrypoints, commands, tree |
 | `ctx tree [--dir d]` | compact repo tree |
 | `ctx pack "<task>" [--budget N]` | context pack for a task |
@@ -92,6 +96,23 @@ After that it's **fully offline**. `ctx pack` and `mcp__ctx__context_pack` fuse 
 Default model: `Xenova/all-MiniLM-L6-v2` (384-dim, quantized). The model's absolute cosines are compressed, so fusion is query-relative (normalized against the query's own max/mean), not threshold-based.
 
 **Chunking is symbol-level.** Each file yields one file-level chunk plus one chunk per AST symbol (function/method/class/impl/struct/…); the embedded text is `path-words + parent chain + kind/name + the symbol's source span`. Retrieval scores every chunk and aggregates to a per-file max, surfacing the winning symbol (`semantically similar (via createInvoice)`). Generated/vendor/secret/asset files are excluded. The vectors shard records `{model, dim, createdAt, headCommit, hashes, entries[]}`; re-embedding is **incremental by content hash** (only changed files), and retrieval **refuses to compare across a different model/dim** (falls back to lexical). Inspect with `ctx vectors` (stats) or `ctx vectors "<query>"` (nearest chunks).
+
+## Branch-keyed, multi-repo indexing
+
+Indexing is **per-repo and per-branch**. `ctx index` always resolves the **git top-level** (`git rev-parse --show-toplevel`) — the cwd or a parent workspace folder is never treated as the repo root. From a folder containing many repos, `ctx index --all` (or `--workspace <path>`) discovers each git repo (a dir with a `.git` dir/file), resolves each one's own root, and indexes them independently; nested repos/submodules are treated as separate repos, and `node_modules`/`target`/`dist`/`.claude-ctx`/vendor/cache dirs are skipped.
+
+Storage:
+```
+~/.claude-ctx/repos/<repoId>/
+  repo.json                      # RepoIdentity: repoId, repoName, repoRoot, remoteUrl
+  branches/<branchKey>/index/    # files/symbols/symtree/calls/graph/git/commands/vectors/meta.json
+```
+- `repoId` = hash of the realpath repo root (stable, collision-resistant, never workspace-derived).
+- `branchKey` = sanitized branch name + short hash (`feature-auth-9f23ab`); detached HEAD → `detached-<short>`; unknown → `unknown`. Raw branch names (which may contain `/`, spaces, unicode) are never used as path segments. Resolved from `.git/HEAD` with **file reads only** (no subprocess — safe on the hook hot path).
+- Switching branches uses a different index dir; the original branch's index is preserved.
+- Sessions/memory stay repo-level (not branch-keyed).
+
+Every structural + vector shard records `RepoIdentity` + `GitIdentity` (`branch, branchKey, headCommit, dirty, indexedAt`). A **dirty worktree still indexes and queries** — freshness is decided by file/chunk hash, not the dirty flag. Semantic search refuses to run (falls back to lexical, with a `CTX_DEBUG` warning) on any mismatch of repoId / branchKey / model / dim / schema. Old (pre-branch) indexes are ignored and rebuilt, never silently compared.
 
 ## Configuration
 

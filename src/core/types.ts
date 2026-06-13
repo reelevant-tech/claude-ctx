@@ -54,6 +54,30 @@ export type SymbolKind =
 // Index shards
 // ---------------------------------------------------------------------------
 
+/** Bump when the vector shard layout changes incompatibly. */
+export const VECTOR_SCHEMA_VERSION = 2
+
+/** Stable repository identity, stored in every index + vector shard. */
+export interface RepoIdentity {
+  repoId: string
+  repoName: string
+  /** the actual git top-level root (never the workspace launch dir) */
+  repoRoot: string
+  remoteUrl?: string
+}
+
+/** Git state captured at index time. */
+export interface GitIdentity {
+  branch?: string
+  /** filesystem-safe key derived from branch (or detached commit) */
+  branchKey: string
+  headCommit?: string
+  /** worktree had uncommitted changes at index time (provenance, not freshness) */
+  dirty: boolean
+  /** ISO timestamp */
+  indexedAt: string
+}
+
 export interface PackageInfo {
   id: number
   name: string
@@ -88,6 +112,10 @@ export interface IndexMeta {
   headCommit?: string
   /** true while a background full build is still running */
   partial?: boolean
+  /** stable repo identity (added with branch-keyed indexing) */
+  repo?: RepoIdentity
+  /** git state at index time */
+  gitId?: GitIdentity
 }
 
 export interface FileGitInfo {
@@ -244,7 +272,9 @@ export interface CallsShard {
   calls: Record<string, CallRef[]>
 }
 
-/** One embedded chunk: a whole file (symbol undefined) or a single symbol. */
+/** One embedded chunk: a whole file (symbol undefined) or a single symbol.
+ * repo/branch fields duplicate the shard header so each entry is self-attributing
+ * (the shard-level RepoIdentity/GitIdentity is the source of truth). */
 export interface VectorEntry {
   /** repo-relative file */
   path: string
@@ -254,6 +284,16 @@ export interface VectorEntry {
   /** 1-based line span of the chunk (whole file for file-level) */
   startLine: number
   endLine: number
+  /** file content hash (incremental reuse) */
+  fileHash?: string
+  /** hash of the embedded text (per-chunk freshness) */
+  chunkHash?: string
+  repoId?: string
+  repoName?: string
+  repoRoot?: string
+  branch?: string
+  branchKey?: string
+  headCommit?: string
   /** base64 of an L2-normalized Float32Array(dim); cosine = dot product */
   vec: string
 }
@@ -262,6 +302,10 @@ export interface VectorEntry {
  * product (vectors are L2-normalized). Incremental re-embed is keyed by `hashes`
  * (re-embed a file only when its content hash changes). */
 export interface VectorsShard {
+  /** layout version; query refuses to use a shard from an older schema */
+  schemaVersion?: number
+  repo?: RepoIdentity
+  gitId?: GitIdentity
   model: string
   dim: number
   /** epoch seconds when the shard was last (re)built */

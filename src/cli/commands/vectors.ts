@@ -14,7 +14,8 @@ export async function run(argv: string[]): Promise<number> {
     return 0
   }
 
-  const query = a.positionals.join(' ').trim()
+  const positional = a.positionals.join(' ').trim()
+  const query = positional === 'stats' ? '' : positional
   if (!query) {
     // stats
     const fileSet = new Set(shard.entries.map((e) => e.path))
@@ -25,12 +26,17 @@ export async function run(argv: string[]): Promise<number> {
       else fileLevel++
     }
     const dimOk = shard.entries.every((e) => Buffer.from(e.vec, 'base64').length === shard.dim * 4)
+    const repo = shard.repo
+    const g = shard.gitId
     if (a.json) {
-      out(JSON.stringify({ model: shard.model, dim: shard.dim, createdAt: shard.createdAt, headCommit: shard.headCommit, files: fileSet.size, entries: shard.entries.length, fileLevel, byKind, dimConsistent: dimOk }, null, 2))
+      out(JSON.stringify({ repo, git: g, schemaVersion: shard.schemaVersion, model: shard.model, dim: shard.dim, createdAt: shard.createdAt, files: fileSet.size, entries: shard.entries.length, fileLevel, byKind, dimConsistent: dimOk }, null, 2))
       return 0
     }
-    out(`model: ${shard.model}  dim: ${shard.dim}  dimConsistent: ${dimOk}`)
-    out(`built: ${new Date(shard.createdAt * 1000).toISOString()}${shard.headCommit ? `  @ ${shard.headCommit.slice(0, 8)}` : ''}`)
+    if (repo) out(`repo: ${repo.repoName}  [${repo.repoId}]`)
+    if (repo) out(`root: ${repo.repoRoot}`)
+    if (g) out(`branch: ${g.branch ?? '(detached/unknown)'}  branchKey: ${g.branchKey}  dirty: ${g.dirty}${g.headCommit ? `  @ ${g.headCommit.slice(0, 8)}` : ''}`)
+    out(`model: ${shard.model}  dim: ${shard.dim}  schema: ${shard.schemaVersion ?? '?'}  dimConsistent: ${dimOk}`)
+    out(`built: ${new Date(shard.createdAt * 1000).toISOString()}`)
     out(`files: ${fileSet.size}  entries: ${shard.entries.length}  (file-level: ${fileLevel})`)
     out(`symbol chunks by kind: ${Object.entries(byKind).map(([k, n]) => `${k}=${n}`).join(', ') || '(none)'}`)
     return 0

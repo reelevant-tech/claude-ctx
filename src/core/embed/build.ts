@@ -1,11 +1,15 @@
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { CtxConfig, FilesShard, SymbolTreeShard, VectorEntry, VectorsShard } from '../types'
-import { headCommit } from '../indexer/gitsig'
+import { VECTOR_SCHEMA_VERSION, type CtxConfig, type FilesShard, type SymbolTreeShard, type VectorEntry, type VectorsShard } from '../types'
+import { gitIdentity } from '../git'
+import { repoIdentity } from '../paths'
 import { loadShard, saveShard } from '../store/shards'
 import { fileEmbeddingText, flattenForChunks, symbolChunkText } from './chunk'
 import { loadEmbedder, type Embedder } from './embedder'
 import { packVector } from './vectors'
+
+const chunkHash = (text: string): string => createHash('sha1').update(text).digest('hex').slice(0, 12)
 
 const MAX_SYMBOL_CHUNKS_PER_FILE = 60
 
@@ -69,6 +73,20 @@ export async function buildVectors(
     }
   }
 
+  const repo = repoIdentity(root)
+  const gid = gitIdentity(root)
+  const stamp = (m: Omit<VectorEntry, 'vec'>, rec: { h: string }, text: string): Omit<VectorEntry, 'vec'> => {
+    m.fileHash = rec.h
+    m.chunkHash = chunkHash(text)
+    m.repoId = repo.repoId
+    m.repoName = repo.repoName
+    m.repoRoot = repo.repoRoot
+    if (gid.branch) m.branch = gid.branch
+    m.branchKey = gid.branchKey
+    if (gid.headCommit) m.headCommit = gid.headCommit
+    return m
+  }
+
   const targets = embeddableFiles(files)
   const hashes: Record<string, string> = {}
   const reused: VectorEntry[] = []
@@ -94,23 +112,20 @@ export async function buildVectors(
     }
     const lines = content ? content.split('\n') : []
     // file-level chunk
-    pending.push({
-      meta: { path: rel, startLine: 1, endLine: lines.length || 1 },
-      text: fileEmbeddingText(rel, rec.exports, rec.docHeadings, content),
-    })
+    const fileText = fileEmbeddingText(rel, rec.exports, rec.docHeadings, content)
+    pending.push({ meta: stamp({ path: rel, startLine: 1, endLine: lines.length || 1 }, rec, fileText), text: fileText })
     // symbol-level chunks (bounded)
     const tree = symtree.trees[rel]
     if (tree && content) {
       for (const { node, parentChain } of flattenForChunks(tree).slice(0, MAX_SYMBOL_CHUNKS_PER_FILE)) {
         if (!node.n) continue
-        const meta: Omit<VectorEntry, 'vec'> = {
-          path: rel,
-          symbol: node.n,
-          kind: node.k,
-          startLine: node.l,
-          endLine: node.endL,
-        }
-        pending.push({ meta, text: symbolChunkText(rel, parentChain, node, lines) })
+        const text = symbolChunkText(rel, parentChain, node, lines)
+        const meta = stamp(
+          { path: rel, symbol: node.n, kind: node.k, startLine: node.l, endLine: node.endL },
+          rec,
+          text,
+        )
+        pending.push({ meta, text })
       }
     }
   }
@@ -134,14 +149,16 @@ export async function buildVectors(
     (a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : a.startLine - b.startLine),
   )
   const shard: VectorsShard = {
+    schemaVersion: VECTOR_SCHEMA_VERSION,
+    repo,
+    gitId: gid,
     model: embedder.model,
     dim: dim || usablePrior?.dim || embedder.dim,
     createdAt: Math.floor(Date.now() / 1000),
     hashes,
     entries,
   }
-  const hc = headCommit(root)
-  if (hc) shard.headCommit = hc
+  if (gid.headCommit) shard.headCommit = gid.headCommit
   saveShard(root, 'vectors', shard)
   return { built: builtFiles, reused: reusedFiles, entries: entries.length, skipped: false, model: embedder.model }
 }

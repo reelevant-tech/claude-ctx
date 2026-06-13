@@ -8,7 +8,12 @@ export function searchSymbols(
 ): SymbolRecord[] {
   const q = query.toLowerCase()
   const hits = new Set<number>()
-  for (const i of idx.symbols.tokenIndex[q] ?? []) hits.add(i)
+  // own-property guard: a JSON-loaded tokenIndex has Object.prototype, so keys
+  // like 'toString'/'constructor' would otherwise return prototype members.
+  const posting = Object.prototype.hasOwnProperty.call(idx.symbols.tokenIndex, q)
+    ? idx.symbols.tokenIndex[q]
+    : undefined
+  if (Array.isArray(posting)) for (const i of posting) hits.add(i)
   idx.symbols.symbols.forEach((s, i) => {
     if (s.n.toLowerCase().includes(q)) hits.add(i)
   })

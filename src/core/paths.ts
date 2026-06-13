@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
+import { currentBranchKey, remoteUrl } from './git'
+import type { RepoIdentity } from './types'
 
 /** Root data dir: ~/.claude-ctx (overridable for tests via CLAUDE_CTX_HOME). */
 export function dataDir(): string {
@@ -45,10 +47,27 @@ export function repoDataDir(root: string): string {
   return join(dataDir(), 'repos', repoId(root))
 }
 
+/** Repo-level identity file (one per repo, all branches). */
+export function repoJsonPath(root: string): string {
+  return join(repoDataDir(root), 'repo.json')
+}
+
+/** Per-branch directory. branchKey defaults to the repo's current branch. */
+export function branchDir(root: string, branchKey?: string): string {
+  return join(repoDataDir(root), 'branches', branchKey ?? currentBranchKey(root))
+}
+
+/** Branch-keyed index directory — all shards live here. */
 export function indexDir(root: string): string {
+  return join(branchDir(root), 'index')
+}
+
+/** Legacy (pre-branch) index dir; only read for migration/cleanup. */
+export function legacyIndexDir(root: string): string {
   return join(repoDataDir(root), 'index')
 }
 
+/** Sessions/memory stay repo-level (not branch-keyed). */
 export function sessionsDir(root: string): string {
   return join(repoDataDir(root), 'sessions')
 }
@@ -57,8 +76,24 @@ export function summaryPath(root: string): string {
   return join(repoDataDir(root), 'summary.json')
 }
 
+/** Index lock is per-branch (two branches can index concurrently). */
 export function lockPath(root: string): string {
-  return join(repoDataDir(root), 'index.lock')
+  return join(branchDir(root), 'index.lock')
+}
+
+/** Stable repo identity for shard metadata. repoId/repoRoot are realpath-based
+ * (never the workspace launch dir); remoteUrl is best-effort provenance. */
+export function repoIdentity(root: string): RepoIdentity {
+  let real = root
+  try {
+    real = realpathSync(root)
+  } catch {
+    /* keep as-is */
+  }
+  const id: RepoIdentity = { repoId: repoId(root), repoName: basename(real), repoRoot: real }
+  const url = remoteUrl(root)
+  if (url) id.remoteUrl = url
+  return id
 }
 
 export function ensureDir(dir: string): void {

@@ -2,8 +2,11 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { dataDir, findRepoRoot } from '../../core/paths'
-import { loadMeta } from '../../core/store/shards'
+import { currentBranchKey, gitTopLevel } from '../../core/git'
+import { dataDir, findRepoRoot, repoId } from '../../core/paths'
+import { loadMeta, loadShard } from '../../core/store/shards'
+import type { VectorsShard } from '../../core/types'
+import { VECTOR_SCHEMA_VERSION } from '../../core/types'
 import { MARKER } from '../../installer/settings-merge'
 import { out, parseCommon } from '../shared'
 
@@ -86,15 +89,43 @@ export async function run(argv: string[]): Promise<number> {
   }
   checks.push({ name: 'MCP server registered', pass: mcpPass, detail: mcpDetail })
 
-  // index for cwd
-  const root = findRepoRoot(a.repo).root
+  // git repo detection (git top-level, not cwd)
+  const top = gitTopLevel(a.repo)
+  checks.push({
+    name: 'git repo detected',
+    pass: top !== null,
+    detail: top ?? 'not inside a git repo (use ctx index --all in a workspace)',
+  })
+  const root = top ?? findRepoRoot(a.repo).root
+
+  // branch key resolution
+  const bk = currentBranchKey(root)
+  checks.push({ name: 'branchKey resolved', pass: bk !== 'unknown', detail: bk })
+
+  // active branch has an index
   const meta = loadMeta(root)
-  let idxDetail = 'no index (run ctx index)'
+  let idxDetail = 'no index for this branch (run ctx index)'
   if (meta) {
     const ageH = ((Date.now() / 1000 - meta.indexedAt) / 3600).toFixed(1)
     idxDetail = `${meta.fileCount} files, ${meta.projectType}, ${ageH}h old${meta.partial ? ' (building)' : ''}`
   }
-  checks.push({ name: 'index for cwd', pass: meta !== null, detail: idxDetail })
+  checks.push({ name: 'index for active branch', pass: meta !== null, detail: idxDetail })
+
+  // vectors match repoId / branchKey / model / dim / schema
+  const vec = loadShard<VectorsShard>(root, 'vectors')
+  let vecPass = true
+  let vecDetail = 'no vectors (optional; run ctx embed-setup)'
+  if (vec && Array.isArray(vec.entries)) {
+    const problems: string[] = []
+    if (vec.schemaVersion !== VECTOR_SCHEMA_VERSION) problems.push(`schema ${vec.schemaVersion}`)
+    if (vec.repo && vec.repo.repoId !== repoId(root)) problems.push('repoId')
+    if (vec.gitId && vec.gitId.branchKey !== bk) problems.push(`branchKey ${vec.gitId.branchKey}`)
+    vecPass = problems.length === 0
+    vecDetail = vecPass
+      ? `${vec.entries.length} chunks, ${vec.model} dim=${vec.dim}, branchKey=${vec.gitId?.branchKey}`
+      : `mismatch: ${problems.join(', ')} (will fall back to lexical)`
+  }
+  checks.push({ name: 'vectors match repo/branch/model', pass: vecPass, detail: vecDetail })
 
   // report
   out('claude-ctx doctor:')

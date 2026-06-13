@@ -1,4 +1,5 @@
 import { run as commandsCmd } from '../cli/commands/commands-cmd'
+import { run as branches } from '../cli/commands/branches'
 import { run as calls } from '../cli/commands/calls'
 import { run as deps } from '../cli/commands/deps'
 import { run as doctor } from '../cli/commands/doctor'
@@ -12,6 +13,7 @@ import { run as overview } from '../cli/commands/overview'
 import { run as pack } from '../cli/commands/pack'
 import { run as recent } from '../cli/commands/recent'
 import { run as related } from '../cli/commands/related'
+import { run as repos } from '../cli/commands/repos'
 import { run as risky } from '../cli/commands/risky'
 import { run as summary } from '../cli/commands/summary'
 import { run as symbols } from '../cli/commands/symbols'
@@ -23,7 +25,9 @@ import { run as uninstall } from '../cli/commands/uninstall'
 type Cmd = (argv: string[]) => Promise<number>
 
 const COMMANDS: Record<string, { run: Cmd; help: string }> = {
-  index: { run: indexCmd, help: 'build/refresh the repo index (--full to force)' },
+  index: { run: indexCmd, help: 'index the current git repo (--full); --all / --workspace <p> for many' },
+  repos: { run: repos, help: 'list indexed repos (repoId, root, branches)' },
+  branches: { run: branches, help: 'list indexed branches: ctx branches --repo <name|id>' },
   overview: { run: overview, help: 'compact repo overview (project type, packages, commands, tree)' },
   tree: { run: tree, help: 'compact repo tree (--dir <d>)' },
   pack: { run: pack, help: 'context pack for a task: ctx pack "<task>" (--json, --budget N)' },
