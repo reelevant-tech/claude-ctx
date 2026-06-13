@@ -21,42 +21,44 @@ export function cleanQuery(raw: string): string {
     .trim()
 }
 
-/**
- * Best-effort extraction of the search term from a Bash command.
- * Handles: grep/egrep/fgrep/rg/ag/ack/git grep (incl. `-e PATTERN`) and
- * find/-name/-iname/-path. Returns null when the command is not a search.
- */
-export function extractSearchQuery(command: string): string | null {
-  const c = command.trim()
-
-  // find … -name|-iname|-path|-ipath <glob>
-  const findM = c.match(/\bfind\b[^|&;]*?\s-i?(?:name|path)\s+(['"]?)([^'"\s]+)\1/)
-  if (findM) {
-    const q = cleanQuery(findM[2]!)
-    return q.length >= 2 ? q : null
-  }
-
-  // grep / rg / ag / ack / git grep
+/** The grep/rg content pattern, if any — checked first (it's the strongest intent). */
+function grepPattern(c: string): string | null {
   const m = c.match(/\b(?:grep|egrep|fgrep|rg|ag|ack|git\s+grep)\b\s+(.*)$/s)
   if (!m) return null
   const rest = m[1]!
-
   // explicit -e PATTERN
   const eM = rest.match(/(?:^|\s)-e\s+(['"]?)(.+?)\1(?:\s|$)/)
   if (eM) {
     const q = cleanQuery(eM[2]!)
     return q.length >= 2 ? q : null
   }
-
-  // otherwise the first non-flag token (respecting quotes)
+  // otherwise the first non-flag, non-brace token (respecting quotes)
   const tokens = rest.match(/(?:[^\s'"]+|'[^']*'|"[^"]*")/g) ?? []
   for (const t of tokens) {
-    if (t.startsWith('-')) continue
+    if (t.startsWith('-') || t === '{}' || t.startsWith('$')) continue
     const q = cleanQuery(t)
-    if (q.length >= 2) return q
-    return null
+    return q.length >= 2 ? q : null
   }
   return null
+}
+
+/** The find -name/-path glob, if any. */
+function findName(c: string): string | null {
+  const m = c.match(/\bfind\b[^|]*?\s-i?(?:name|path)\s+(['"]?)([^'"\s]+)\1/)
+  if (!m) return null
+  const q = cleanQuery(m[2]!)
+  return q.length >= 2 ? q : null
+}
+
+/**
+ * Best-effort extraction of the search term from a Bash command.
+ * Prefers the grep/rg content pattern (incl. inside `find … -exec grep …` or a
+ * pipe) over a `find -name` glob — the content pattern is the real intent, the
+ * name glob is usually just a file-type filter. Returns null for non-search cmds.
+ */
+export function extractSearchQuery(command: string): string | null {
+  const c = command.trim()
+  return grepPattern(c) ?? findName(c)
 }
 
 /**

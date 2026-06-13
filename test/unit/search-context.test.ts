@@ -21,7 +21,14 @@ describe('extractSearchQuery', () => {
     expect(extractSearchQuery('cat x | grep foo')).toBe('foo')
   })
 
-  it('extracts the name glob from find', () => {
+  it('prefers the grep pattern over a find -name glob (find -exec grep)', () => {
+    expect(
+      extractSearchQuery('find /a/types/src -name "*.ts" -exec grep -l "RunContext" {} \\;'),
+    ).toBe('RunContext')
+    expect(extractSearchQuery('find . -name "*.ts" -exec grep -rn createInvoice {} +')).toBe('createInvoice')
+  })
+
+  it('extracts the name glob from find when there is no grep', () => {
     expect(extractSearchQuery('find . -name "*invoice*"')).toBe('invoice')
     expect(extractSearchQuery('find src -iname Customer.ts')).toBe('Customer ts') // '.' tokenized
 
