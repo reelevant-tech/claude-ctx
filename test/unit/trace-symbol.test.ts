@@ -40,7 +40,9 @@ describe('traceSymbol', () => {
     const txt = renderTraceSymbol(ROOT, trace)
     expect(txt).toContain('## trace: createInvoice')
     expect(txt).toContain('**Definition:**')
-    expect(txt).toContain('**References** (typescript')
+    expect(txt).toContain('**References** — typed')
+    expect(txt).toContain('(roles: def/call/use)')
+    expect(txt).toContain('[call]') // the createInvoice() call site in src/index.ts
     expect(txt).toContain('createInvoice')
   })
 })
@@ -53,9 +55,16 @@ describe('mcp trace_symbol', () => {
     expect(txt).toContain('src/index.ts')
   })
 
-  it('references uses TypeScript when available', () => {
+  it('references uses TypeScript when available, with file-breadth coverage', () => {
     const txt = toolImpls.references!(ROOT, { symbol: 'createInvoice' })
-    expect(txt).toContain('TypeScript')
+    expect(txt).toContain('typed, complete within indexed TS files')
+    expect(txt).toMatch(/\d+ refs? across \d+ files?/)
     expect(txt).toContain('src/index.ts')
+  })
+
+  it('symbol_search reports total match count + file breadth', () => {
+    const txt = toolImpls.symbol_search!(ROOT, { query: 'createInvoice' })
+    expect(txt).toMatch(/\d+ symbols? match "createInvoice" across \d+ files?:/)
+    expect(txt).toContain('createInvoice')
   })
 })

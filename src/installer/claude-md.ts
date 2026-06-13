@@ -7,12 +7,12 @@ export const END = '<!-- claude-ctx:end -->'
 
 const RULES = [
   `- ${MCP_AGENT_RULE}`,
-  '- Invoke mcp__ctx__context_pack (agent tool) with your task before multi-file work.',
-  '- Prefer mcp__ctx__symbol_search over repo-wide grep; follow with mcp__ctx__trace_symbol or mcp__ctx__references.',
+  '- Pick the tool: one symbol end-to-end → `mcp__ctx__trace_symbol` · all usages → `mcp__ctx__references` · find by name → `mcp__ctx__symbol_search` (not grep) · files for a task → `mcp__ctx__context_pack` · a file’s neighborhood → `mcp__ctx__related_files` · path between two files → `mcp__ctx__dep_trace`.',
+  '- Use `mcp__ctx__context_pack` first for multi-file work; `mcp__ctx__trace_symbol` before refactoring a symbol.',
   '- Check related tests before editing with `mcp__ctx__find_tests`.',
   '- Never edit generated/vendor files; confirm with the user before changing infra/prod-sensitive files.',
-  '- Use `mcp__ctx__trace_symbol` to map definition, references, and callees before refactoring.',
   '- Record decisions and next steps with `mcp__ctx__session_note`.',
+  '- Tip: add `"mcp__ctx__*"` to `permissions.allow` in settings.json so these tools load without an approval prompt.',
 ]
 
 export function renderManagedBlock(idx: LoadedIndex): string {

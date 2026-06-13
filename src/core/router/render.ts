@@ -3,7 +3,8 @@ import { estimateTokens } from '../tokens'
 import { MCP_AGENT_RULE } from '../mcp-rules'
 import type { ContextPack, LoadedIndex, RepoSummary } from '../types'
 
-const MORE_LINE = '_More: mcp__ctx__context_pack, symbol_search, trace_symbol, references, related_files, dep_trace_'
+const MORE_LINE =
+  '_More (all mcp__ctx__*): context_pack · symbol_search · trace_symbol · references · related_files · dep_trace_'
 
 export function renderPack(pack: ContextPack): string {
   const lines: string[] = []
@@ -41,8 +42,7 @@ const RULES_DIGEST = [
   '**Rules:**',
   `- ${MCP_AGENT_RULE}`,
   '- Start from the injected context / this map — do NOT grep the repo or read files one-by-one to rediscover structure.',
-  '- Invoke mcp__ctx__context_pack (agent tool) before multi-file work; expand with trace_symbol / references / related_files.',
-  '- Prefer mcp__ctx__symbol_search over repo-wide grep; follow with mcp__ctx__trace_symbol or mcp__ctx__references.',
+  '- Pick the tool: one symbol end-to-end → mcp__ctx__trace_symbol · all usages → mcp__ctx__references · find by name → mcp__ctx__symbol_search (not grep) · files for a task → mcp__ctx__context_pack · a file’s neighborhood → mcp__ctx__related_files · path between two files → mcp__ctx__dep_trace.',
   '- Check related tests before editing (mcp__ctx__find_tests).',
   '- Avoid generated/vendor paths; record decisions with mcp__ctx__session_note.',
 ]

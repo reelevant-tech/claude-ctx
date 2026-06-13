@@ -90,13 +90,40 @@ export function renderTraceSymbol(root: string, trace: TraceSymbolResult): strin
     lines.push('**Definition:** not found in index')
   }
 
+  // Role tagging is grounded in the AST `calls` shard: a reference whose file:line
+  // is a known call expression for this symbol is a CALL; the definition site is DEF;
+  // everything else is a USE (value/type/import). The finer TYPE-USE vs IMPORT split
+  // needs the deferred typed cross-file data-flow work — see plan "data-flow tracer".
+  const shard = loadShard<CallsShard>(root, 'calls')
+  const callLines = new Set<string>()
+  if (shard) {
+    for (const file of Object.keys(shard.calls)) {
+      for (const c of shard.calls[file]!) {
+        if (c.callee === trace.symbol) callLines.add(`${file}:${c.line}`)
+      }
+    }
+  }
+
   const { refs, source } = trace.references
+  const srcNote =
+    source === 'typescript'
+      ? 'typed, complete within indexed TS files'
+      : 'name-based (call-sites only; may miss type/import uses & over-match common names)'
   if (refs.length === 0) {
-    lines.push(`**References:** none (${source})`)
+    lines.push(`**References:** none — ${srcNote}`)
   } else {
-    lines.push(`**References** (${source}, ${refs.length}):`)
+    const rfiles = new Set(refs.map((r) => r.file)).size
+    lines.push(
+      `**References** — ${srcNote} · ${refs.length} ref${refs.length === 1 ? '' : 's'} across ${rfiles} file${rfiles === 1 ? '' : 's'} (roles: def/call/use):`,
+    )
     for (const r of refs) {
-      let row = `  ${r.file}:${r.line}`
+      const role =
+        def && r.file === def.file && r.line === def.line
+          ? 'def'
+          : callLines.has(`${r.file}:${r.line}`)
+            ? 'call'
+            : 'use'
+      let row = `  [${role}] ${r.file}:${r.line}`
       if (r.caller) row += `  in ${r.caller}()`
       lines.push(row)
       if (r.snippet) lines.push(`    ${r.snippet}`)
@@ -107,7 +134,6 @@ export function renderTraceSymbol(root: string, trace: TraceSymbolResult): strin
     lines.push(`**Callees** (from ${trace.symbol}):`)
     for (const c of trace.callees) lines.push(`  → ${c.callee}() [L${c.line}]`)
   } else if (def) {
-    const shard = loadShard<CallsShard>(root, 'calls')
     const all = shard?.calls[def.file] ?? []
     if (all.length > 0) {
       lines.push(`**Calls in ${def.file}** (file-level):`)

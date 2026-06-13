@@ -43,19 +43,26 @@ export async function run(argv: string[]): Promise<number> {
     process.stderr.write('Usage: ctx symbols <query>\n')
     return 1
   }
-  const results = searchSymbols(idx, query, {
+  const limit = typeof a.values.limit === 'string' ? Number(a.values.limit) : 20
+  // gather more than we show so we can report total + breadth (coverage)
+  const all = searchSymbols(idx, query, {
     kind: typeof a.values.kind === 'string' ? a.values.kind : undefined,
     exportedOnly: a.values.exported === true,
-    limit: typeof a.values.limit === 'string' ? Number(a.values.limit) : 20,
+    limit: 1000,
   })
+  const results = all.slice(0, limit)
   if (a.json) {
     out(JSON.stringify(results, null, 2))
     return 0
   }
-  if (results.length === 0) {
+  if (all.length === 0) {
     out(`No symbols matching "${query}".`)
     return 0
   }
+  const files = new Set(all.map((s) => s.f)).size
+  out(
+    `${all.length} symbol${all.length === 1 ? '' : 's'} match "${query}" across ${files} file${files === 1 ? '' : 's'}${all.length > results.length ? ` (showing ${results.length})` : ''}:`,
+  )
   for (const s of results) {
     const ex = s.x ? '' : ' (private)'
     out(`${s.n}  ${s.k}  ${s.f}:${s.l}${ex}  — ${s.sig}`)

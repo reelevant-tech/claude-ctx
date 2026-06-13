@@ -83,10 +83,12 @@ export function renderReferences(
         : `No call sites found for "${symbol}" (name-based).`
     return hint
   }
+  const files = new Set(refs.map((r) => r.file)).size
+  const span = `${refs.length} ref${refs.length === 1 ? '' : 's'} across ${files} file${files === 1 ? '' : 's'}`
   const label =
     source === 'typescript'
-      ? `References to "${symbol}" (TypeScript, ${refs.length}):`
-      : `Call sites of "${symbol}" (name-based, ${refs.length} — verify before relying):`
+      ? `References to "${symbol}" — typed, complete within indexed TS files · ${span}:`
+      : `Call sites of "${symbol}" — name-based (call-sites only; may miss type/import uses & over-match common names) · ${span}:`
   const lines: string[] = [label]
   if (definition) lines.push(`  definition: ${definition.file}:${definition.line}  ${definition.kind}  ${definition.sig}`)
   for (const r of refs) {

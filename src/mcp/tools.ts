@@ -121,13 +121,18 @@ export const toolImpls: Record<string, ToolImpl> = {
     if (!idx) return NO_INDEX
     const query = String(args.query ?? '').trim()
     if (!query) return 'Provide a query.'
-    const results = searchSymbols(idx, query, {
+    const limit = typeof args.limit === 'number' ? args.limit : 20
+    // gather more than we show so we can report total + breadth (coverage)
+    const all = searchSymbols(idx, query, {
       kind: typeof args.kind === 'string' ? args.kind : undefined,
       exportedOnly: args.exported_only === true,
-      limit: typeof args.limit === 'number' ? args.limit : 20,
+      limit: 1000,
     })
-    if (results.length > 0) {
-      return results.map((s) => `${s.n}  ${s.k}  ${s.f}:${s.l}  — ${s.sig}`).join('\n')
+    if (all.length > 0) {
+      const files = new Set(all.map((s) => s.f)).size
+      const shown = all.slice(0, limit)
+      const header = `${all.length} symbol${all.length === 1 ? '' : 's'} match "${query}" across ${files} file${files === 1 ? '' : 's'}${all.length > shown.length ? ` (showing ${shown.length})` : ''}:`
+      return [header, ...shown.map((s) => `${s.n}  ${s.k}  ${s.f}:${s.l}  — ${s.sig}`)].join('\n')
     }
     // fallback: ripgrep content search
     if (hasRipgrep()) {
@@ -334,14 +339,14 @@ export function createServer(ctx: ToolContext): McpServer {
 
   server.registerTool('repo_overview', { description: 'Project type, packages, entrypoints, commands, tree, and index freshness.', inputSchema: {} }, wrap('repo_overview'))
   server.registerTool('repo_tree', { description: 'Compact repo tree, optionally scoped to a directory.', inputSchema: { dir: z.string().optional(), depth: z.number().optional(), max_entries: z.number().optional() } }, wrap('repo_tree'))
-  server.registerTool('context_pack', { description: 'High-signal context pack for a coding task: relevant files, why, symbols, tests, deps.', inputSchema: { task: z.string(), max_tokens: z.number().optional() } }, wrap('context_pack'))
-  server.registerTool('symbol_search', { description: 'Find functions/classes/types/structs/traits by name. Prefer this over grep.', inputSchema: { query: z.string(), kind: z.string().optional(), exported_only: z.boolean().optional(), limit: z.number().optional() } }, wrap('symbol_search'))
+  server.registerTool('context_pack', { description: 'Files for a task/feature (not one symbol): ranked files, why, symbols, tests, deps. Use FIRST for multi-file work; for a single symbol use trace_symbol.', inputSchema: { task: z.string(), max_tokens: z.number().optional() } }, wrap('context_pack'))
+  server.registerTool('symbol_search', { description: 'Find a symbol by name when you do not know its file (prefer over grep). Then trace_symbol for the full picture.', inputSchema: { query: z.string(), kind: z.string().optional(), exported_only: z.boolean().optional(), limit: z.number().optional() } }, wrap('symbol_search'))
   server.registerTool('related_files', { description: 'Files related to a path: imports, importers, co-changed, tests, siblings.', inputSchema: { path: z.string() } }, wrap('related_files'))
   server.registerTool('dep_trace', { description: 'Dependency path between two files, or fan-in/fan-out for one file.', inputSchema: { from: z.string(), to: z.string().optional() } }, wrap('dep_trace'))
   server.registerTool('symbol_tree', { description: 'Nested symbol tree of a file (module/class/impl > methods) from the AST.', inputSchema: { path: z.string() } }, wrap('symbol_tree'))
   server.registerTool('calls', { description: 'Intra-file call expressions in a file, grouped by caller (best-effort).', inputSchema: { path: z.string() } }, wrap('calls'))
-  server.registerTool('references', { description: 'Find all references to a symbol (TypeScript-aware when possible; name-based fallback).', inputSchema: { symbol: z.string(), file: z.string().optional() } }, wrap('references'))
-  server.registerTool('trace_symbol', { description: 'Trace a symbol end-to-end: definition, references, callees, import paths, related files.', inputSchema: { symbol: z.string(), file: z.string().optional(), depth: z.number().optional() } }, wrap('trace_symbol'))
+  server.registerTool('references', { description: 'Every usage site of a symbol (TypeScript-typed when possible, else name-based call-sites). Use when you only need usages; trace_symbol if you also want the definition + neighborhood.', inputSchema: { symbol: z.string(), file: z.string().optional() } }, wrap('references'))
+  server.registerTool('trace_symbol', { description: 'Start here for ONE symbol: definition + all references + callees + import paths + related files in one call. Use instead of chaining symbol_search → references.', inputSchema: { symbol: z.string(), file: z.string().optional(), depth: z.number().optional() } }, wrap('trace_symbol'))
   server.registerTool('find_tests', { description: 'Tests covering a file and the command to run them.', inputSchema: { path: z.string() } }, wrap('find_tests'))
   server.registerTool('recent_changes', { description: 'Recently changed files and co-change clusters.', inputSchema: { days: z.number().optional(), limit: z.number().optional() } }, wrap('recent_changes'))
   server.registerTool('risk_check', { description: 'Risk classification for a path (generated/vendor/infra/secret).', inputSchema: { path: z.string() } }, wrap('risk_check'))
