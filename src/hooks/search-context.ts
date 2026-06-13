@@ -61,6 +61,22 @@ export function extractSearchQuery(command: string): string | null {
   return grepPattern(c) ?? findName(c)
 }
 
+const ENUM_NUDGE =
+  '[claude-ctx] Listing files — the index already has the layout. Use mcp__ctx__repo_tree (optionally scoped to a dir), mcp__ctx__repo_overview (packages, entrypoints, commands), or mcp__ctx__context_pack("<task>") for the files that matter — instead of enumerating with find/ls -R/tree.'
+
+/**
+ * A bare file-enumeration command (find/ls -R/tree with no content grep) has no
+ * semantic term to rank — steer it to the structural tools instead. Returns the
+ * nudge text, or null when the command isn't a file enumeration.
+ */
+export function enumerationNudge(command: string): string | null {
+  const c = command.trim()
+  const isFind = /\bfind\b/.test(c) && /\s-(?:i?name|type|i?path|maxdepth)\b/.test(c)
+  const isLsR = /\bls\b[^|]*\s-\w*R/.test(c)
+  const isTree = /(?:^|[|&;]\s*)tree\b/.test(c)
+  return isFind || isLsR || isTree ? ENUM_NUDGE : null
+}
+
 /**
  * Build an injected "ranked indexed matches for this search" block, or null when
  * there is no usable query / no index / no matches.

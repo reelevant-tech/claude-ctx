@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cleanQuery, extractSearchQuery } from '../../src/hooks/search-context'
+import { cleanQuery, enumerationNudge, extractSearchQuery } from '../../src/hooks/search-context'
 
 describe('cleanQuery', () => {
   it('strips regex/glob metacharacters down to search tokens', () => {
@@ -38,5 +38,19 @@ describe('extractSearchQuery', () => {
     expect(extractSearchQuery('npm test')).toBeNull()
     expect(extractSearchQuery('cat .env')).toBeNull()
     expect(extractSearchQuery('ls -la')).toBeNull()
+  })
+})
+
+describe('enumerationNudge', () => {
+  it('fires for bare file enumerations (find/ls -R/tree)', () => {
+    expect(enumerationNudge('find . -type f -name "*.ts"')).toContain('mcp__ctx__repo_tree')
+    expect(enumerationNudge('ls -R src')).toContain('mcp__ctx__repo_tree')
+    expect(enumerationNudge('tree -L 2')).toContain('mcp__ctx__repo_tree')
+  })
+
+  it('does not fire for content searches or ordinary commands', () => {
+    expect(enumerationNudge('grep -rn foo .')).toBeNull()
+    expect(enumerationNudge('npm test')).toBeNull()
+    expect(enumerationNudge('ls -la')).toBeNull() // non-recursive
   })
 })

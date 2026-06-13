@@ -133,6 +133,30 @@ describe('pre-bash search interception', () => {
     })
     expect(out.hookSpecificOutput?.additionalContext ?? '').toContain('billing/invoice.ts')
   })
+
+  it('prefers the embedded grep pattern over the find -name glob', async () => {
+    const h = await importHandlers()
+    const out = await h.preBash({
+      session_id: 'bs3',
+      cwd: ROOT,
+      tool_name: 'Bash',
+      tool_input: { command: 'find . -name "*.ts" -exec grep -l "createInvoice" {} \\;' },
+    })
+    expect(out.hookSpecificOutput?.additionalContext ?? '').toContain('billing/invoice.ts')
+  })
+
+  it('nudges toward tree tools on a bare file enumeration', async () => {
+    const h = await importHandlers()
+    const out = await h.preBash({
+      session_id: 'bs4',
+      cwd: ROOT,
+      tool_name: 'Bash',
+      tool_input: { command: 'find . -type f -name "*.ts"' },
+    })
+    const ctx = out.hookSpecificOutput?.additionalContext ?? ''
+    expect(ctx).toContain('mcp__ctx__repo_tree')
+    expect(ctx).not.toContain('Ranked indexed matches')
+  })
 })
 
 describe('pre-grep', () => {

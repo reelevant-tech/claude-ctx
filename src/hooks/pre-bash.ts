@@ -4,7 +4,7 @@ import { appendEvent } from '../core/memory/log'
 import { findRepoRoot } from '../core/paths'
 import { loadMeta } from '../core/store/shards'
 import type { GuardTier, GuardVerdict, HookInput, HookOutput, HookSpecificOutput } from '../core/types'
-import { extractSearchQuery, searchPackContext } from './search-context'
+import { enumerationNudge, extractSearchQuery, searchPackContext } from './search-context'
 
 const RANK: Record<GuardTier, number> = { severe: 3, destructive: 2, inefficient: 1 }
 
@@ -14,17 +14,20 @@ export async function handle(input: HookInput): Promise<HookOutput> {
   const sid = input.session_id ?? 'unknown'
   const command = String(input.tool_input?.command ?? '')
   if (!command) return {}
+  const meta = loadMeta(root)
 
-  // ranked index matches for a `grep`/`find`/`rg` search — independent of the bash guard
+  // ranked index matches for a `grep`/`find`/`rg` content search; else, for a bare
+  // file enumeration (find/ls -R/tree), steer to the tree tools. Both independent
+  // of the bash guard. The nudge is gated on an index existing (else its tools are useless).
   const sq = extractSearchQuery(command)
   const searchCtx = sq ? searchPackContext(root, sid, sq) : null
+  const injected = searchCtx ?? (meta ? enumerationNudge(command) : null)
 
   // bash safety/efficiency guard
   let guardBody: string | null = null
   let decision: 'deny' | 'ask' | undefined
   let reason: string | undefined
   if (cfg.guard.bash !== 'off') {
-    const meta = loadMeta(root)
     const verdicts = classifyBashCommand(command, {
       repoRoot: root,
       secretGlobs: meta?.secretGlobs ?? [],
@@ -62,7 +65,7 @@ export async function handle(input: HookInput): Promise<HookOutput> {
     }
   }
 
-  const additionalContext = [guardBody, searchCtx].filter(Boolean).join('\n\n')
+  const additionalContext = [guardBody, injected].filter(Boolean).join('\n\n')
   if (!additionalContext && !decision) return {}
 
   const hs: HookSpecificOutput = { hookEventName: 'PreToolUse' }
