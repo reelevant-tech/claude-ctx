@@ -100,13 +100,14 @@ export const toolImpls: Record<string, ToolImpl> = {
     const cfg = loadConfig(root)
     const sid = latestSessionId(root) ?? 'mcp'
     const state = loadState(root, sid)
-    const semantic = await semanticScores(root, task, cfg)
+    const sem = await semanticScores(root, task, cfg)
     const pack = buildPack(task, idx, state, {
       budget,
       withExcerpts: true,
       root,
       redact: redactSecrets,
-      semantic,
+      semantic: sem?.scores,
+      semanticSymbols: sem?.symbols,
       semWeight: cfg.embeddings.weight,
     })
     return renderPack(pack)

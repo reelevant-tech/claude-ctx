@@ -20,13 +20,14 @@ export async function run(argv: string[]): Promise<number> {
   const budget = typeof a.values.budget === 'string' ? Number(a.values.budget) : cfg.packBudgetTokens
   const sid = latestSessionId(a.repo) ?? 'cli'
   const state = loadState(a.repo, sid)
-  const semantic = a.values['no-embed'] === true ? undefined : await semanticScores(a.repo, task, cfg)
+  const sem = a.values['no-embed'] === true ? undefined : await semanticScores(a.repo, task, cfg)
   const pack = buildPack(task, idx, state, {
     budget: Number.isFinite(budget) ? budget : cfg.packBudgetTokens,
     withExcerpts: true,
     root: a.repo,
     redact: redactSecrets,
-    semantic,
+    semantic: sem?.scores,
+    semanticSymbols: sem?.symbols,
     semWeight: cfg.embeddings.weight,
   })
   out(a.json ? JSON.stringify(pack, null, 2) : renderPack(pack))

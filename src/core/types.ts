@@ -244,12 +244,33 @@ export interface CallsShard {
   calls: Record<string, CallRef[]>
 }
 
-/** Per-file semantic embeddings (optional layer). Vectors are L2-normalized so
- * cosine similarity = dot product. Each value is base64 of a Float32Array(dim). */
+/** One embedded chunk: a whole file (symbol undefined) or a single symbol. */
+export interface VectorEntry {
+  /** repo-relative file */
+  path: string
+  /** symbol name; undefined = file-level chunk */
+  symbol?: string
+  kind?: SymbolKind
+  /** 1-based line span of the chunk (whole file for file-level) */
+  startLine: number
+  endLine: number
+  /** base64 of an L2-normalized Float32Array(dim); cosine = dot product */
+  vec: string
+}
+
+/** Optional semantic layer. Symbol-level + file-level chunks; cosine = dot
+ * product (vectors are L2-normalized). Incremental re-embed is keyed by `hashes`
+ * (re-embed a file only when its content hash changes). */
 export interface VectorsShard {
   model: string
   dim: number
-  vectors: Record<string, string>
+  /** epoch seconds when the shard was last (re)built */
+  createdAt: number
+  /** HEAD commit at build time, for staleness/branch diagnostics (git repos) */
+  headCommit?: string
+  /** repo-relative file -> content hash at embed time (drives incremental reuse) */
+  hashes: Record<string, string>
+  entries: VectorEntry[]
 }
 
 /** Everything the router / MCP server needs, loaded in memory. */

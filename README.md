@@ -55,6 +55,7 @@ Global flags: `--repo <path>` (default cwd, resolved to the git root), `--json`.
 | `ctx references <symbol>` | name-based call sites of a symbol (best-effort) |
 | `ctx tests <path>` | tests covering a file + how to run them |
 | `ctx recent [--days --limit]` | recently changed files |
+| `ctx vectors ["<query>"]` | semantic index stats, or nearest symbol chunks |
 | `ctx risky <path>` | risk classification for a path |
 | `ctx commands` | detected project commands |
 | `ctx summary` | session memory summary |
@@ -89,6 +90,8 @@ node dist/cli.cjs embed-setup        # installs a small model (transformers.js, 
 After that it's **fully offline**. `ctx pack` and `mcp__ctx__context_pack` fuse a query-relative cosine score with the lexical/structural score; `ctx index` keeps the vectors fresh. It fails open — if the model isn't installed, everything falls back to pure lexical. The hook hot-path stays lexical-only (~40ms, no model load); semantic runs in the long-lived MCP server (warm model) and the CLI. Tune via `embeddings` in config; `--no-embed` forces lexical for a single `ctx pack`/`ctx index`.
 
 Default model: `Xenova/all-MiniLM-L6-v2` (384-dim, quantized). The model's absolute cosines are compressed, so fusion is query-relative (normalized against the query's own max/mean), not threshold-based.
+
+**Chunking is symbol-level.** Each file yields one file-level chunk plus one chunk per AST symbol (function/method/class/impl/struct/…); the embedded text is `path-words + parent chain + kind/name + the symbol's source span`. Retrieval scores every chunk and aggregates to a per-file max, surfacing the winning symbol (`semantically similar (via createInvoice)`). Generated/vendor/secret/asset files are excluded. The vectors shard records `{model, dim, createdAt, headCommit, hashes, entries[]}`; re-embedding is **incremental by content hash** (only changed files), and retrieval **refuses to compare across a different model/dim** (falls back to lexical). Inspect with `ctx vectors` (stats) or `ctx vectors "<query>"` (nearest chunks).
 
 ## Configuration
 

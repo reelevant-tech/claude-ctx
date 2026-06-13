@@ -13,6 +13,8 @@ export interface PackOptions {
   nowSec?: number
   /** path -> cosine similarity (hybrid retrieval); omit for pure lexical */
   semantic?: Map<string, number>
+  /** path -> winning symbol name, for the "semantically similar (via X)" reason */
+  semanticSymbols?: Map<string, string>
   /** hybrid fusion weight (default 0.5) */
   semWeight?: number
 }
@@ -52,7 +54,7 @@ export function buildPack(
   opts: PackOptions,
 ): ContextPack {
   const tokens = tokenizeTask(task)
-  const scored = scoreFiles(tokens, idx, state, opts.nowSec, opts.semantic, opts.semWeight)
+  const scored = scoreFiles(tokens, idx, state, opts.nowSec, opts.semantic, opts.semWeight, opts.semanticSymbols)
   const tokenSet = new Set(tokens.map((t) => t.t))
   const top = scored[0]
 

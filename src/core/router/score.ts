@@ -136,6 +136,7 @@ export function scoreFiles(
   nowSec?: number,
   semantic?: Map<string, number>,
   semWeight = 0.5,
+  semanticSymbols?: Map<string, string>,
 ): ScoredFile[] {
   const now = nowSec ?? Math.floor(Date.now() / 1000)
   // semantic can carry retrieval even with no lexical tokens (e.g. paraphrase)
@@ -236,7 +237,8 @@ export function scoreFiles(
       const pts = round1(semWeight * SEM_MAX_POINTS * norm)
       if (pts > 0) {
         s += pts
-        wrk.semantic = { reason: 'semantically similar', points: pts }
+        const sym = semanticSymbols?.get(ctx.path)
+        wrk.semantic = { reason: sym ? `semantically similar (via ${sym})` : 'semantically similar', points: pts }
       }
     }
     if (rec.git) {

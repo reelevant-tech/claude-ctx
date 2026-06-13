@@ -21,11 +21,27 @@ export function dot(a: Float32Array, b: Float32Array): number {
   return s
 }
 
-/** path -> cosine similarity against the query vector, for every stored file. */
-export function cosineMap(query: Float32Array, shard: VectorsShard): Map<string, number> {
-  const out = new Map<string, number>()
-  for (const [path, b64] of Object.entries(shard.vectors)) {
-    out.set(path, dot(query, unpackVector(b64, shard.dim)))
+export interface SemanticHit {
+  /** best cosine across the file's chunks */
+  scores: Map<string, number>
+  /** the symbol whose chunk gave the file its best score (if it was a symbol chunk) */
+  symbols: Map<string, string>
+}
+
+/** Score every chunk against the query, aggregating to a per-file max (with the
+ * winning symbol). Aggregation keeps the existing per-file router fusion intact
+ * while benefiting from symbol-level granularity. */
+export function scoreEntries(query: Float32Array, shard: VectorsShard): SemanticHit {
+  const scores = new Map<string, number>()
+  const symbols = new Map<string, string>()
+  for (const e of shard.entries) {
+    const cos = dot(query, unpackVector(e.vec, shard.dim))
+    const prev = scores.get(e.path)
+    if (prev === undefined || cos > prev) {
+      scores.set(e.path, cos)
+      if (e.symbol) symbols.set(e.path, e.symbol)
+      else symbols.delete(e.path)
+    }
   }
-  return out
+  return { scores, symbols }
 }

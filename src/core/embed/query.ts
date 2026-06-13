@@ -1,27 +1,32 @@
 import type { CtxConfig, VectorsShard } from '../types'
 import { loadShard } from '../store/shards'
 import { loadEmbedder, type Embedder } from './embedder'
-import { cosineMap } from './vectors'
+import { scoreEntries, type SemanticHit } from './vectors'
 
 /**
- * Semantic cosine scores (path -> similarity) for a task, or undefined when the
- * embeddings layer is unavailable (no vectors shard / no embedder). Callers pass
- * the result to scoreFiles for hybrid ranking; undefined => pure lexical.
+ * Semantic hit (per-file cosine + winning symbol) for a task, or undefined when
+ * the embeddings layer is unavailable or inconsistent. Guards against a
+ * model/dimension mismatch between the stored shard and the current embedder —
+ * comparing across models silently produces garbage cosines, so we fall back to
+ * pure lexical instead. Callers pass the result to scoreFiles for hybrid ranking.
  */
 export async function semanticScores(
   root: string,
   task: string,
   cfg: CtxConfig,
   embedderOverride?: Embedder | null,
-): Promise<Map<string, number> | undefined> {
+): Promise<SemanticHit | undefined> {
   const shard = loadShard<VectorsShard>(root, 'vectors')
-  if (!shard || Object.keys(shard.vectors).length === 0) return undefined
+  // tolerate a pre-upgrade shard (no entries[]) -> fall back to lexical
+  if (!shard || !Array.isArray(shard.entries) || shard.entries.length === 0) return undefined
   const embedder = embedderOverride ?? (await loadEmbedder(cfg))
   if (!embedder) return undefined
+  // P0 guard: never compare vectors built by a different model.
+  if (embedder.model !== shard.model) return undefined
   try {
     const [qv] = await embedder.embed([task])
-    if (!qv) return undefined
-    return cosineMap(qv, shard)
+    if (!qv || qv.length !== shard.dim) return undefined
+    return scoreEntries(qv, shard)
   } catch {
     return undefined
   }

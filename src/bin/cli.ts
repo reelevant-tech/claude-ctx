@@ -17,6 +17,7 @@ import { run as summary } from '../cli/commands/summary'
 import { run as symbols } from '../cli/commands/symbols'
 import { run as testsCmd } from '../cli/commands/tests-cmd'
 import { run as tree } from '../cli/commands/tree'
+import { run as vectors } from '../cli/commands/vectors'
 import { run as uninstall } from '../cli/commands/uninstall'
 
 type Cmd = (argv: string[]) => Promise<number>
@@ -34,6 +35,7 @@ const COMMANDS: Record<string, { run: Cmd; help: string }> = {
   references: { run: references, help: 'name-based call sites of a symbol (best-effort)' },
   tests: { run: testsCmd, help: 'tests covering a path + how to run them' },
   recent: { run: recent, help: 'recently changed files (--days --limit)' },
+  vectors: { run: vectors, help: 'semantic index stats, or nearest chunks: ctx vectors "<query>"' },
   risky: { run: risky, help: 'risk classification for a path' },
   commands: { run: commandsCmd, help: 'detected project commands' },
   summary: { run: summary, help: 'session memory summary' },
