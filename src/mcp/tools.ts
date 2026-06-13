@@ -4,6 +4,8 @@ import { basename } from 'node:path'
 import { z } from 'zod'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { loadConfig } from '../core/config'
+import { buildVectors } from '../core/embed/build'
+import { semanticScores } from '../core/embed/query'
 import { buildIndex } from '../core/indexer/index'
 import { shortestPaths } from '../core/indexer/graph'
 import { classifyRisk } from '../core/indexer/risk'
@@ -65,8 +67,10 @@ function hasRipgrep(): boolean {
   return rgAvailable
 }
 
+type ToolImpl = (root: string, args: Record<string, unknown>) => string | Promise<string>
+
 /** Pure tool logic. Each returns rendered text; never throws (returns guidance instead). */
-export const toolImpls: Record<string, (root: string, args: Record<string, unknown>) => string> = {
+export const toolImpls: Record<string, ToolImpl> = {
   repo_overview(root) {
     const idx = getIndex(root)
     if (!idx) return NO_INDEX
@@ -85,15 +89,24 @@ export const toolImpls: Record<string, (root: string, args: Record<string, unkno
     return buildTreeSummary(files.map((rel) => ({ rel })), max) || '(empty)'
   },
 
-  context_pack(root, args) {
+  async context_pack(root, args) {
     const idx = getIndex(root)
     if (!idx) return NO_INDEX
     const task = String(args.task ?? '').trim()
     if (!task) return 'Provide a task description.'
     const budget = typeof args.max_tokens === 'number' ? args.max_tokens : 2000
+    const cfg = loadConfig(root)
     const sid = latestSessionId(root) ?? 'mcp'
     const state = loadState(root, sid)
-    const pack = buildPack(task, idx, state, { budget, withExcerpts: true, root, redact: redactSecrets })
+    const semantic = await semanticScores(root, task, cfg)
+    const pack = buildPack(task, idx, state, {
+      budget,
+      withExcerpts: true,
+      root,
+      redact: redactSecrets,
+      semantic,
+      semWeight: cfg.embeddings.weight,
+    })
     return renderPack(pack)
   },
 
@@ -245,11 +258,17 @@ export const toolImpls: Record<string, (root: string, args: Record<string, unkno
     }
   },
 
-  index_refresh(root, args) {
+  async index_refresh(root, args) {
     const full = args.full === true
     const stats = buildIndex(root, { mode: full ? 'full' : undefined })
     cache = null // invalidate
-    return `Reindexed: ${stats.fileCount} files, ${stats.symbolCount} symbols, ${stats.durationMs}ms (${stats.mode})`
+    const cfg = loadConfig(root)
+    let embed = ''
+    if (cfg.embeddings.enabled) {
+      const r = await buildVectors(root, cfg)
+      embed = r.skipped ? ' (embeddings: unavailable)' : `, ${r.built} embedded`
+    }
+    return `Reindexed: ${stats.fileCount} files, ${stats.symbolCount} symbols, ${stats.durationMs}ms (${stats.mode})${embed}`
   },
 }
 
@@ -260,7 +279,7 @@ export function createServer(ctx: ToolContext): McpServer {
   const wrap = (name: string) => async (args: Record<string, unknown>) => {
     let text: string
     try {
-      text = toolImpls[name]!(ctx.root, args)
+      text = await toolImpls[name]!(ctx.root, args)
     } catch {
       text = NO_INDEX
     }

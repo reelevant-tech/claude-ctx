@@ -28,8 +28,8 @@ describe('toolImpls', () => {
     expect(toolImpls.repo_overview!(ROOT, {})).toContain('ts-app')
   })
 
-  it('context_pack surfaces the invoice file', () => {
-    const txt = toolImpls.context_pack!(ROOT, { task: 'fix invoice rounding' })
+  it('context_pack surfaces the invoice file', async () => {
+    const txt = await toolImpls.context_pack!(ROOT, { task: 'fix invoice rounding' })
     expect(txt).toContain('billing/invoice.ts')
   })
 

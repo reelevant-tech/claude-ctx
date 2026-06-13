@@ -56,11 +56,25 @@ Global flags: `--repo <path>` (default cwd, resolved to the git root), `--json`.
 | `ctx commands` | detected project commands |
 | `ctx summary` | session memory summary |
 | `ctx init [--rules]` | write a managed block into the repo's `CLAUDE.md` |
+| `ctx embed-setup` | enable local offline semantic search (installs the model) |
 | `ctx install / uninstall / doctor` | manage the global integration |
 
 ## MCP tools (`mcp__ctx__*`)
 
 `repo_overview` · `repo_tree` · `context_pack` · `symbol_search` · `related_files` · `dep_trace` · `find_tests` · `recent_changes` · `risk_check` · `session_summary` · `session_note` · `index_refresh`. Every result is token-capped and never throws.
+
+## Hybrid semantic retrieval (local, offline)
+
+By default the router is lexical + structural (symbols, paths, import graph, git signals). You can additionally enable a **local embeddings layer** for Cursor-style semantic retrieval — finding files by meaning even when they share no words with your task (e.g. "remember what I worked on" → the session-memory code, "stop the AI from wiping files" → the bash guard).
+
+```bash
+node dist/cli.cjs embed-setup        # installs a small model (transformers.js, WASM — no native deps)
+                                     # into ~/.claude-ctx, then embeds the repo. ~50MB, one-time download.
+```
+
+After that it's **fully offline**. `ctx pack` and `mcp__ctx__context_pack` fuse a query-relative cosine score with the lexical/structural score; `ctx index` keeps the vectors fresh. It fails open — if the model isn't installed, everything falls back to pure lexical. The hook hot-path stays lexical-only (~40ms, no model load); semantic runs in the long-lived MCP server (warm model) and the CLI. Tune via `embeddings` in config; `--no-embed` forces lexical for a single `ctx pack`/`ctx index`.
+
+Default model: `Xenova/all-MiniLM-L6-v2` (384-dim, quantized). The model's absolute cosines are compressed, so fusion is query-relative (normalized against the query's own max/mean), not threshold-based.
 
 ## Configuration
 
@@ -73,7 +87,8 @@ Defaults live in code; override globally in `~/.claude-ctx/config.json` and per-
   "inject": { "sessionStart": true, "userPromptSubmit": true },
   "guard": { "bash": "warn", "edits": "warn", "reads": "warn" }, // warn | enforce | off
   "riskyGlobs": [], "secretGlobs": [], "exclude": [],
-  "maxFileSizeKb": 512, "maxFiles": 20000, "bgIndexThresholdFiles": 2000
+  "maxFileSizeKb": 512, "maxFiles": 20000, "bgIndexThresholdFiles": 2000,
+  "embeddings": { "enabled": true, "model": "Xenova/all-MiniLM-L6-v2", "weight": 0.5 }
 }
 ```
 

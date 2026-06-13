@@ -94,9 +94,39 @@ interface Work {
   entry?: ScoreReason
   centrality?: ScoreReason
   inspected?: ScoreReason
+  semantic?: ScoreReason
   penalties: ScoreReason[]
   /** pass-1 score (stage1 + non-relational boosts - penalties) */
   base: number
+}
+
+// Hybrid semantic fusion is QUERY-RELATIVE. Absolute cosines from a small
+// sentence model vary wildly by query (~0.16 for a pure paraphrase, ~0.48 when
+// the query shares code vocabulary), so thresholds can't be absolute — we
+// normalize each file's cosine against this query's max/mean and only engage
+// when there's a meaningful top signal and spread.
+const SEM_MAX_POINTS = 80 // contribution of the single best semantic match (before weight)
+const SEM_MIN_MAXCOS = 0.15 // skip semantic entirely if nothing clears this (model cosines are compressed)
+const SEM_MIN_SPREAD = 0.03 // ...or if every file is equally (un)related
+const SEM_CAND_NORM = 0.6 // a file with no lexical hit must reach this normalized similarity to enter
+
+interface SemStats {
+  active: boolean
+  norm: (cos: number) => number
+}
+
+function semStatsOf(semantic: Map<string, number> | undefined): SemStats {
+  if (!semantic || semantic.size === 0) return { active: false, norm: () => 0 }
+  let mx = 0
+  let sum = 0
+  for (const v of semantic.values()) {
+    if (v > mx) mx = v
+    sum += v
+  }
+  const mean = sum / semantic.size
+  const denom = Math.max(0.01, mx - mean)
+  const active = mx >= SEM_MIN_MAXCOS && mx - mean >= SEM_MIN_SPREAD
+  return { active, norm: (c) => Math.max(0, Math.min(1, (c - mean) / denom)) }
 }
 
 export function scoreFiles(
@@ -104,12 +134,17 @@ export function scoreFiles(
   idx: LoadedIndex,
   state: SessionState | null,
   nowSec?: number,
+  semantic?: Map<string, number>,
+  semWeight = 0.5,
 ): ScoredFile[] {
   const now = nowSec ?? Math.floor(Date.now() / 1000)
-  if (taskTokens.length === 0) return []
+  // semantic can carry retrieval even with no lexical tokens (e.g. paraphrase)
+  if (taskTokens.length === 0 && !semantic) return []
   const paths = Object.keys(idx.files.files).sort()
   const N = paths.length
   if (N === 0) return []
+
+  const sem = semStatsOf(semantic)
 
   const symsByFile = new Map<string, SymbolRecord[]>()
   for (const s of idx.symbols.symbols) {
@@ -121,6 +156,7 @@ export function scoreFiles(
   // all (token, file) matches in one sweep — df derives from the same matches that score
   const ctxs: FileCtx[] = []
   const matches: (Match | null)[][] = []
+  const ctxByPath = new Map<string, FileCtx>()
   const df = new Array<number>(taskTokens.length).fill(0)
   for (const p of paths) {
     const rec = idx.files.files[p]
@@ -135,6 +171,7 @@ export function scoreFiles(
     }
     ctxs.push(ctx)
     matches.push(row)
+    ctxByPath.set(p, ctx)
   }
 
   const w = taskTokens.map((tt, i) => (1 + Math.log(N / Math.max(1, df[i] ?? 0))) * tt.q)
@@ -146,6 +183,7 @@ export function scoreFiles(
     tokenReasons: ScoreReason[]
   }
   const raws: Raw[] = []
+  const inRaws = new Set<string>()
   let maxL = 0
   for (let fi = 0; fi < ctxs.length; fi++) {
     const ctx = ctxs[fi]
@@ -163,8 +201,20 @@ export function scoreFiles(
     if (L <= 0) continue
     if (L > maxL) maxL = L
     raws.push({ ctx, L, tokenReasons })
+    inRaws.add(ctx.path)
   }
-  if (raws.length === 0 || maxL <= 0) return []
+
+  // hybrid: admit files that are semantically similar even with no lexical hit
+  if (semantic && sem.active) {
+    for (const [path, cos] of semantic) {
+      if (inRaws.has(path) || sem.norm(cos) < SEM_CAND_NORM) continue
+      const ctx = ctxByPath.get(path)
+      if (!ctx) continue
+      raws.push({ ctx, L: 0, tokenReasons: [] })
+      inRaws.add(path)
+    }
+  }
+  if (raws.length === 0) return []
 
   const waived = taskTokens.some((tt) => RISK_VOCAB.has(tt.t))
 
@@ -175,12 +225,20 @@ export function scoreFiles(
     const wrk: Work = {
       path: ctx.path,
       rec,
-      lhat: raw.L / maxL,
+      lhat: maxL > 0 ? raw.L / maxL : 0,
       tokenReasons: raw.tokenReasons,
       penalties: [],
       base: 0,
     }
     let s = 100 * wrk.lhat
+    if (semantic && sem.active) {
+      const norm = sem.norm(semantic.get(ctx.path) ?? 0)
+      const pts = round1(semWeight * SEM_MAX_POINTS * norm)
+      if (pts > 0) {
+        s += pts
+        wrk.semantic = { reason: 'semantically similar', points: pts }
+      }
+    }
     if (rec.git) {
       const age = now - rec.git.lastTs
       const days = Math.max(0, Math.floor(age / DAY))
@@ -281,6 +339,7 @@ export function scoreFiles(
     if (cochangeR) reasons.push(cochangeR)
     if (testlinkR) reasons.push(testlinkR)
     if (samePkgR) reasons.push(samePkgR)
+    if (wrk.semantic) reasons.push(wrk.semantic)
     if (wrk.inspected) reasons.push(wrk.inspected)
     reasons.push(...wrk.penalties)
     out.push({ path: wrk.path, score, reasons })

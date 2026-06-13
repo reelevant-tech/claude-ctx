@@ -13,6 +13,9 @@ const common = {
   sourcemap: false,
   logLevel: 'warning',
   banner: { js: '#!/usr/bin/env node' },
+  // transformers.js (WASM + dynamic model loading) is loaded at runtime via
+  // dynamic import, not bundled — resolved from project or ~/.claude-ctx node_modules.
+  external: ['@huggingface/transformers'],
 }
 
 // .cjs extension so Node treats them as CommonJS regardless of package.json
@@ -32,9 +35,11 @@ for (const b of builds) {
 // Hook bundle guard: the hook hot-path must never pull in the typescript parser
 // (8MB, ~1s parse cost) and must stay under 500KB so cold-start stays <500ms.
 const hookInputs = Object.keys(hookMeta.inputs)
-const offenders = hookInputs.filter((p) => p.includes('node_modules/typescript'))
+const offenders = hookInputs.filter(
+  (p) => p.includes('node_modules/typescript') || p.includes('embed/'),
+)
 if (offenders.length > 0) {
-  console.error('FATAL: dist/hook.cjs bundles the typescript package:', offenders.slice(0, 3))
+  console.error('FATAL: dist/hook.cjs pulls in a forbidden module (typescript/embed):', offenders.slice(0, 3))
   process.exit(1)
 }
 const hookSize = statSync('dist/hook.cjs').size

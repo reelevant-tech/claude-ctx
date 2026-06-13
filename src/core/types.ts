@@ -192,7 +192,23 @@ export interface PendingShard {
   since: number
 }
 
-export type ShardName = 'meta' | 'files' | 'symbols' | 'graph' | 'git' | 'commands' | 'pending'
+export type ShardName =
+  | 'meta'
+  | 'files'
+  | 'symbols'
+  | 'graph'
+  | 'git'
+  | 'commands'
+  | 'pending'
+  | 'vectors'
+
+/** Per-file semantic embeddings (optional layer). Vectors are L2-normalized so
+ * cosine similarity = dot product. Each value is base64 of a Float32Array(dim). */
+export interface VectorsShard {
+  model: string
+  dim: number
+  vectors: Record<string, string>
+}
 
 /** Everything the router / MCP server needs, loaded in memory. */
 export interface LoadedIndex {
@@ -202,6 +218,8 @@ export interface LoadedIndex {
   graph: GraphShard
   git: GitShard
   commands: CommandsShard
+  /** present only when the optional embeddings layer has been built */
+  vectors?: VectorsShard
 }
 
 // ---------------------------------------------------------------------------
@@ -263,6 +281,14 @@ export interface CtxConfig {
   mcpMaxResultTokens: number
   /** how many commits `git log` analyzes for signals */
   cochangeCommits: number
+  /** optional local-embeddings (offline semantic retrieval) layer */
+  embeddings: {
+    enabled: boolean
+    /** transformers.js model id (downloaded once, then cached offline) */
+    model: string
+    /** hybrid fusion weight: semantic boost = weight * 100 * max(0, cosine - floor) */
+    weight: number
+  }
 }
 
 // ---------------------------------------------------------------------------

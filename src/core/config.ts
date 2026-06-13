@@ -23,6 +23,11 @@ export const DEFAULT_CONFIG: CtxConfig = {
   bgIndexThresholdFiles: 2000,
   mcpMaxResultTokens: 2000,
   cochangeCommits: 1000,
+  embeddings: {
+    enabled: true,
+    model: 'Xenova/all-MiniLM-L6-v2',
+    weight: 0.5,
+  },
 }
 
 function readJsonIfExists(path: string): Record<string, unknown> | null {

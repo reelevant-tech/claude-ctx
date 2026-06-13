@@ -11,6 +11,10 @@ export interface PackOptions {
   root?: string
   redact?: (s: string) => string
   nowSec?: number
+  /** path -> cosine similarity (hybrid retrieval); omit for pure lexical */
+  semantic?: Map<string, number>
+  /** hybrid fusion weight (default 0.5) */
+  semWeight?: number
 }
 
 const MATCH_RE = /^matches '([^']+)'/
@@ -48,7 +52,7 @@ export function buildPack(
   opts: PackOptions,
 ): ContextPack {
   const tokens = tokenizeTask(task)
-  const scored = scoreFiles(tokens, idx, state, opts.nowSec)
+  const scored = scoreFiles(tokens, idx, state, opts.nowSec, opts.semantic, opts.semWeight)
   const tokenSet = new Set(tokens.map((t) => t.t))
   const top = scored[0]
 

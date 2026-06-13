@@ -1,6 +1,7 @@
 import { run as commandsCmd } from '../cli/commands/commands-cmd'
 import { run as deps } from '../cli/commands/deps'
 import { run as doctor } from '../cli/commands/doctor'
+import { run as embedSetup } from '../cli/commands/embed-setup'
 import { run as indexCmd } from '../cli/commands/index-cmd'
 import { run as init } from '../cli/commands/init'
 import { run as install } from '../cli/commands/install'
@@ -31,6 +32,7 @@ const COMMANDS: Record<string, { run: Cmd; help: string }> = {
   commands: { run: commandsCmd, help: 'detected project commands' },
   summary: { run: summary, help: 'session memory summary' },
   init: { run: init, help: 'write a managed claude-ctx block into CLAUDE.md (--rules)' },
+  'embed-setup': { run: embedSetup, help: 'enable local offline semantic search (installs the model)' },
   install: { run: install, help: 'install hooks + MCP server globally (--no-mcp)' },
   uninstall: { run: uninstall, help: 'remove hooks + MCP server (--purge)' },
   doctor: { run: doctor, help: 'diagnose the installation' },

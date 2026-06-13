@@ -5,26 +5,13 @@ import * as path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { CtxConfig } from '../../src/core/types'
+import { DEFAULT_CONFIG } from '../../src/core/config'
 import { detectLang, isBinaryBuffer, scanRepo } from '../../src/core/indexer/scan'
 
 const FIXTURES = fileURLToPath(new URL('../../fixtures', import.meta.url))
 
 function makeCfg(over: Partial<CtxConfig> = {}): CtxConfig {
-  return {
-    packBudgetTokens: 1500,
-    overviewBudgetTokens: 700,
-    inject: { sessionStart: true, userPromptSubmit: true },
-    guard: { bash: 'warn', edits: 'warn', reads: 'warn' },
-    exclude: [],
-    riskyGlobs: [],
-    secretGlobs: [],
-    maxFileSizeKb: 512,
-    maxFiles: 20000,
-    bgIndexThresholdFiles: 2000,
-    mcpMaxResultTokens: 2000,
-    cochangeCommits: 1000,
-    ...over,
-  }
+  return { ...DEFAULT_CONFIG, ...over }
 }
 
 function tmpRepo(): string {

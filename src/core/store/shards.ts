@@ -11,6 +11,7 @@ import type {
   PendingShard,
   ShardName,
   SymbolsShard,
+  VectorsShard,
 } from '../types'
 
 export function shardPath(root: string, name: ShardName): string {
@@ -61,7 +62,10 @@ export function loadIndex(root: string): LoadedIndex | null {
   const graph = loadShard<GraphShard>(root, 'graph') ?? { fwd: {}, rev: {}, centrality: {} }
   const git = loadShard<GitShard>(root, 'git') ?? { recent: [], churn: {}, cochange: {} }
   const commands = loadShard<CommandsShard>(root, 'commands') ?? { commands: [] }
-  return { meta, files, symbols, graph, git, commands }
+  const vectors = loadShard<VectorsShard>(root, 'vectors')
+  const idx: LoadedIndex = { meta, files, symbols, graph, git, commands }
+  if (vectors) idx.vectors = vectors
+  return idx
 }
 
 export function loadPending(root: string): PendingShard {

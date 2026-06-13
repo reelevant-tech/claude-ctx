@@ -4,26 +4,14 @@ import * as path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { CtxConfig, PackageInfo } from '../../src/core/types'
+import { DEFAULT_CONFIG } from '../../src/core/config'
 import { scanRepo } from '../../src/core/indexer/scan'
 import { assignPackage, detectProject } from '../../src/core/indexer/detect'
 
 const FIXTURES = fileURLToPath(new URL('../../fixtures', import.meta.url))
 
 function makeCfg(): CtxConfig {
-  return {
-    packBudgetTokens: 1500,
-    overviewBudgetTokens: 700,
-    inject: { sessionStart: true, userPromptSubmit: true },
-    guard: { bash: 'warn', edits: 'warn', reads: 'warn' },
-    exclude: [],
-    riskyGlobs: [],
-    secretGlobs: [],
-    maxFileSizeKb: 512,
-    maxFiles: 20000,
-    bgIndexThresholdFiles: 2000,
-    mcpMaxResultTokens: 2000,
-    cochangeCommits: 1000,
-  }
+  return { ...DEFAULT_CONFIG }
 }
 
 function detectFixture(name: string) {
