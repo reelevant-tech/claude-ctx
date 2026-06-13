@@ -108,11 +108,49 @@ describe('pre-bash (enforce mode via repo config)', () => {
   })
 })
 
-describe('pre-grep', () => {
-  it('nudges on an unscoped repo-wide search', async () => {
+describe('pre-bash search interception', () => {
+  it('injects ranked matches for a bash grep without blocking', async () => {
     const h = await importHandlers()
-    const out = await h.preGrep({ cwd: ROOT, tool_name: 'Grep', tool_input: { pattern: 'createInvoice' } })
-    expect(out.hookSpecificOutput?.additionalContext ?? '').toContain('mcp__ctx__symbol_search')
+    const out = await h.preBash({
+      session_id: 'bs1',
+      cwd: ROOT,
+      tool_name: 'Bash',
+      tool_input: { command: 'grep -rn createInvoice .' },
+    })
+    const ctx = out.hookSpecificOutput?.additionalContext ?? ''
+    expect(ctx).toContain('Ranked indexed matches')
+    expect(ctx).toContain('billing/invoice.ts')
+    expect(out.hookSpecificOutput?.permissionDecision).toBeUndefined()
+  })
+
+  it('injects ranked matches for a bash find -name', async () => {
+    const h = await importHandlers()
+    const out = await h.preBash({
+      session_id: 'bs2',
+      cwd: ROOT,
+      tool_name: 'Bash',
+      tool_input: { command: 'find . -name "*invoice*"' },
+    })
+    expect(out.hookSpecificOutput?.additionalContext ?? '').toContain('billing/invoice.ts')
+  })
+})
+
+describe('pre-grep', () => {
+  it('injects ranked indexed matches for a Grep pattern', async () => {
+    const h = await importHandlers()
+    const out = await h.preGrep({ session_id: 'g1', cwd: ROOT, tool_name: 'Grep', tool_input: { pattern: 'createInvoice' } })
+    const ctx = out.hookSpecificOutput?.additionalContext ?? ''
+    expect(ctx).toContain('Ranked indexed matches')
+    expect(ctx).toContain('billing/invoice.ts')
+    expect(out.hookSpecificOutput?.permissionDecision).toBeUndefined() // never blocks
+  })
+
+  it('falls back to a nudge when the pattern is too thin to rank', async () => {
+    const h = await importHandlers()
+    const out = await h.preGrep({ session_id: 'g2', cwd: ROOT, tool_name: 'Glob', tool_input: { pattern: '**/*.ts' } })
+    const ctx = out.hookSpecificOutput?.additionalContext ?? ''
+    expect(ctx).toContain('mcp__ctx__symbol_search')
+    expect(ctx).not.toContain('Ranked indexed matches')
   })
 })
 
