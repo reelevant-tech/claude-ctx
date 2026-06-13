@@ -33,6 +33,7 @@ import { rmSync } from 'node:fs'
 import { gitIdentity } from '../git'
 import { legacyIndexDir, repoId, repoIdentity, repoJsonPath } from '../paths'
 import { writeFileAtomic } from '../store/shards'
+import { extractPython } from '../ast/python'
 import { extractRust } from '../ast/rust'
 import { extractTsTree } from '../ast/ts-tree'
 import { extractCommands } from './commands'
@@ -40,6 +41,7 @@ import { assignPackage, detectProject } from './detect'
 import { buildGraph } from './graph'
 import { collectGitSignals, headCommit } from './gitsig'
 import { parseLexical } from './parse-lexical'
+import { parsePython } from './parse-python'
 import { parseRust } from './parse-rust'
 import { parseTs } from './parse-ts'
 import { buildResolverContext, resolveImport } from './resolve'
@@ -168,6 +170,18 @@ async function processFile(
     } else {
       parse = parseRust(content)
       parser = 'rust'
+    }
+  } else if (lang === 'py') {
+    const px = await extractPython(content).catch(() => null)
+    if (px) {
+      parse = px.result
+      parser = 'python'
+      tree = px.tree
+      calls = px.calls
+      treeParser = 'tree-sitter'
+    } else {
+      parse = parsePython(content)
+      parser = 'python'
     }
   } else if (lang === 'md') {
     parse = parseLexical(content, 'md')

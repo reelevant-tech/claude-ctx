@@ -14,13 +14,14 @@ import Parser from 'web-tree-sitter'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyParser = any
 
-export type TSLang = 'rust' | 'typescript' | 'tsx' | 'javascript'
+export type TSLang = 'rust' | 'typescript' | 'tsx' | 'javascript' | 'python'
 
 const WASM: Record<TSLang, string> = {
   rust: 'tree-sitter-rust.wasm',
   typescript: 'tree-sitter-typescript.wasm',
   tsx: 'tree-sitter-tsx.wasm',
   javascript: 'tree-sitter-javascript.wasm',
+  python: 'tree-sitter-python.wasm',
 }
 
 /** Locate a wasm file: shipped grammars/ dir next to the bundle, else dev node_modules. */

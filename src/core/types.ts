@@ -11,7 +11,7 @@
 // Languages / classification
 // ---------------------------------------------------------------------------
 
-export type Lang = 'ts' | 'js' | 'rust' | 'md' | 'json' | 'toml' | 'yaml' | 'other'
+export type Lang = 'ts' | 'js' | 'rust' | 'py' | 'md' | 'json' | 'toml' | 'yaml' | 'other'
 
 export type FileKind =
   | 'source'
@@ -134,7 +134,7 @@ export interface FileRecord {
   lang: Lang
   /** PackageInfo.id, -1 if not inside any package */
   pkg: number
-  parser: 'ts-api' | 'rust' | 'lexical' | 'none'
+  parser: 'ts-api' | 'rust' | 'python' | 'lexical' | 'none'
   kind: FileKind
   risk: RiskTag[]
   entry: boolean

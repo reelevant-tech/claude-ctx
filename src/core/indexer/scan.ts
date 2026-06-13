@@ -222,6 +222,8 @@ const EXT_LANG: Record<string, Lang> = {
   mjs: 'js',
   cjs: 'js',
   rs: 'rust',
+  py: 'py',
+  pyi: 'py',
   md: 'md',
   markdown: 'md',
   json: 'json',
