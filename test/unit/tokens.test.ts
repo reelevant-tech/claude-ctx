@@ -51,6 +51,29 @@ describe('tokenizeTask with accent folding', () => {
   })
 })
 
+describe('tokenizeTask with alphanumeric identifiers', () => {
+  it('keeps the distinctive short parts of a mixed letter/digit identifier', () => {
+    // BM25F must reach BM25_K1 / BM25_B in the index, which keeps "bm"/"25".
+    const toks = tokenizeTask('how does BM25F scoring work').map((t) => t.t)
+    expect(toks).toContain('bm')
+    expect(toks).toContain('25')
+  })
+  it('keeps the digit part of P95-style identifiers', () => {
+    const toks = tokenizeTask('the P95 latency metric').map((t) => t.t)
+    expect(toks).toContain('95')
+  })
+  it('still drops short noise tokens from plain (non-mixed) words', () => {
+    // "id"/"to" are short and from non-mixed words → stay filtered out.
+    const toks = tokenizeTask('map id to user').map((t) => t.t)
+    expect(toks).not.toContain('id')
+    expect(toks).not.toContain('to')
+  })
+  it('does not keep single-character parts even from a mixed word', () => {
+    const toks = tokenizeTask('the P95 value').map((t) => t.t)
+    expect(toks).not.toContain('p')
+  })
+})
+
 describe('expandTaskTokens', () => {
   it('adds FR→EN aliases at reduced weight, keeps originals at full weight', () => {
     const base = tokenizeTask('connexion à la base de données')
