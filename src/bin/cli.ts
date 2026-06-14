@@ -1,4 +1,5 @@
 import { run as commandsCmd } from '../cli/commands/commands-cmd'
+import { run as benchSession } from '../cli/commands/bench-session'
 import { run as branches } from '../cli/commands/branches'
 import { run as calls } from '../cli/commands/calls'
 import { run as deps } from '../cli/commands/deps'
@@ -55,6 +56,10 @@ const COMMANDS: Record<string, { run: Cmd; help: string }> = {
   init: { run: init, help: 'write a managed claude-ctx block into CLAUDE.md (--rules)' },
   'embed-setup': { run: embedSetup, help: 'enable local offline semantic search (installs the model)' },
   eval: { run: evalCmd, help: 'benchmark retrieval: ctx eval <queries.json> [--k 8]' },
+  'bench-session': {
+    run: benchSession,
+    help: 'session token accounting: ctx bench-session [<id>|--all|--dir <d>|--baseline <d> --treatment <d>]',
+  },
   install: { run: install, help: 'install hooks + MCP + embeddings runtime globally (--no-mcp, --no-embed)' },
   uninstall: { run: uninstall, help: 'remove hooks + MCP server (--purge)' },
   doctor: { run: doctor, help: 'diagnose the installation' },

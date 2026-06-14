@@ -9,6 +9,8 @@ export const DEFAULT_CONFIG: CtxConfig = {
   inject: {
     sessionStart: true,
     userPromptSubmit: true,
+    confidenceGate: true,
+    shadow: false,
   },
   guard: {
     bash: 'warn',

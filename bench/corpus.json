@@ -1,0 +1,18 @@
+[
+  { "id": "ups-pack-flow", "prompt": "How does a user prompt become an injected context pack? Walk through the UserPromptSubmit hook end to end." },
+  { "id": "bash-guard", "prompt": "Where are dangerous bash commands classified and how does the guard decide deny vs ask vs warn?" },
+  { "id": "pack-confidence", "prompt": "How is the confidence level (high/medium/low) of a context pack computed, and what does it gate?" },
+  { "id": "identifier-tokenize", "prompt": "How does the tokenizer split a camelCase / snake_case identifier into sub-tokens? Which function does it and how is it tested?" },
+  { "id": "session-log", "prompt": "Where are per-session events written to disk, in what format, and what event kinds exist?" },
+  { "id": "index-freshness", "prompt": "How does the index stay fresh after a file edit? Trace what happens on a Write/Edit." },
+  { "id": "hybrid-retrieval", "prompt": "How does hybrid semantic retrieval fuse the embedding cosine score with the lexical/structural score?" },
+  { "id": "session-start", "prompt": "What does the SessionStart hook inject, and how is the overview trimmed to its token budget?" },
+  { "id": "related-files", "prompt": "How are related files (imports, importers, tests, co-changed) computed for a given path?" },
+  { "id": "mcp-tools", "prompt": "Where are the MCP tools registered and how many are there? List them." },
+  { "id": "bm25f-score", "prompt": "How does the BM25F lexical scoring work — what are the fields and how is document length normalized?" },
+  { "id": "query-expansion", "prompt": "How are French queries expanded to English terms before retrieval, and where is the alias map?" },
+  { "id": "vectors-guard", "prompt": "How does vector retrieval guard against a model or dimension mismatch in the vectors shard?" },
+  { "id": "risk-classify", "prompt": "How are files classified as risky/infra/secret, and where does that tagging happen?" },
+  { "id": "installer-hooks", "prompt": "How does the installer register the hooks and the MCP server into Claude Code's settings?" },
+  { "id": "call-chain", "prompt": "How does call_chain build a best-effort cross-file execution flow, and how are edges labelled?" }
+]

@@ -231,13 +231,41 @@ These tools are **complementary**, not mutually exclusive. claude-ctx + Serena i
 
 ---
 
+## Session token accounting (the real question)
+
+Retrieval hit@k says the right file is *findable*; it does **not** say claude-ctx saves tokens. The actual value claim is that local routing replaces costly agentic search (exploratory `grep`/`find`, cascading `Read`s) with less verbose deterministic retrieval — which only nets out if each injected pack avoids more tokens than it adds.
+
+The hooks now write a per-session JSONL audit trail (`~/.claude-ctx/repos/<id>/sessions/<sid>.jsonl`) recording the token cost of every `Read`/`Bash`/`mcp__ctx__*` result and every injection decision (`pack`/`overview` events, with confidence and whether they were injected). `ctx bench-session` rolls these up:
+
+- `ctx bench-session [<id>] | --all | --dir <d>` — descriptive metrics for one/all sessions: read / bash / MCP / injected tokens, tool calls, distinct files read, pack mix (high/medium/low, injected), and **overlap@5** (share of files read that the pack's top-5 named).
+- `ctx bench-session --baseline <shadowDir> --treatment <liveDir>` — A/B diff and `net_saved`.
+
+**A/B protocol.** Run the same task corpus twice over the same repo:
+
+1. `inject.shadow=true` — *baseline*: **observe-only**, every hook records token costs but injects/steers nothing, so Claude behaves as if claude-ctx weren't installed. Archive the sessions dir.
+2. `inject.shadow=false` — *treatment*: full claude-ctx (injection + steering). Archive the sessions dir.
+3. `ctx bench-session --baseline <1> --treatment <2>`.
+
+The harness in [`bench/`](bench/) automates this: `bench/run-ab.sh bench/corpus.json` snapshots config, runs the corpus through `claude -p` once per arm, archives the per-arm session logs, and prints the diff. Run it on a throwaway checkout — the corpus is read-only investigation tasks, but headless agents can still wander.
+
+**Residual confounds to disclose with any number:** (a) `shadow` leaves the `mcp__ctx__*` tools reachable and any `ctx init` CLAUDE.md block on disk, so the baseline isn't *zero* claude-ctx unless you also drop those; (b) `claude -p` is non-deterministic — average ≥3 runs/task; (c) `net_saved` ignores task success — pair it with a pass/fail judgment per task.
+
+```
+net_saved = (read + bash_output)_baseline
+          − (read + bash_output + tokens_injected + mcp_result)_treatment
+```
+
+Caveats: token sizes use the ~4-chars/token estimate (good for relative deltas, not exact billing); `net_saved` is meaningful only across the **same** corpus; no speculative "avoided" figure is claimed inside a single session. **No public "saves X%" claim until this A/B is run** — the defensible claim today is "routes Claude to likely-relevant files/symbols/tests instead of exploratory greps".
+
+---
+
 ## Methodology and limits of this document
 
-- **No end-to-end agent benchmark** (turns to resolution, tokens consumed, task success rate) on third-party projects — only internal retrieval + a small manual agent task set (see above).
+- **End-to-end agent token accounting** now ships as instrumentation (`ctx bench-session` + shadow mode, see above), but **no cross-project A/B results are published yet** — only internal retrieval + a small manual agent task set.
 - **No latency measurement** on third-party projects — only the ~40ms hook cold-start target declared in this repo.
 - **GitHub stars**: popularity signal, not quality.
 - hit@k / MRR numbers come from a **single reference repo** not included here; your mileage will vary.
-- Code state: v0.1.0, 426 passing tests, 19 MCP tools, 8 hooks. Rich AST: TS/JS, Rust, Python.
+- Code state: v0.1.0, 432 passing tests, 19 MCP tools, 8 hooks. Rich AST: TS/JS, Rust, Python.
 
 To contribute a reproducible benchmark: add a `queries.json` file (`ctx eval` format) and document hit@k / MRR per mode in a PR.
 

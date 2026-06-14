@@ -1,12 +1,17 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { redactSecrets } from '../guard/redact'
 
-/** Read a single trimmed source line (1-based). Returns undefined on failure. */
+/**
+ * Read a single trimmed source line (1-based). Returns undefined on failure.
+ * Secrets are redacted here so every emitter (trace_symbol, references, …) is
+ * safe by construction — redaction is the snippet's contract, not the caller's.
+ */
 export function lineSnippet(root: string, file: string, line: number, max = 120): string | undefined {
   try {
     const raw = readFileSync(join(root, file), 'utf8').split('\n')[line - 1]
     if (raw === undefined) return undefined
-    const t = raw.trim()
+    const t = redactSecrets(raw.trim())
     return t.length > max ? `${t.slice(0, max - 1)}…` : t
   } catch {
     return undefined
@@ -15,7 +20,8 @@ export function lineSnippet(root: string, file: string, line: number, max = 120)
 
 /**
  * Read an inclusive 1-based line range as a raw block (indentation preserved).
- * Caps at maxLines, appending a marker for the elided tail. Caller redacts.
+ * Caps at maxLines, appending a marker for the elided tail. Output is
+ * secret-redacted (idempotent — callers may re-redact harmlessly).
  */
 export function rangeSnippet(
   root: string,
@@ -34,9 +40,9 @@ export function rangeSnippet(
       const head = lines.slice(0, maxLines)
       const elided = lines.length - maxLines
       head.push(`… (+${elided} more line${elided === 1 ? '' : 's'}, to L${end})`)
-      return head.join('\n')
+      return redactSecrets(head.join('\n'))
     }
-    return lines.join('\n')
+    return redactSecrets(lines.join('\n'))
   } catch {
     return undefined
   }

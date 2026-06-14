@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { indexDir } from '../paths'
 import type {
@@ -68,21 +68,73 @@ export function loadIndex(root: string): LoadedIndex | null {
   return idx
 }
 
+/**
+ * Pending dirty-file queue. Append-only JSONL (one `{f,ts}` per line) so two
+ * concurrent PostToolUse hooks — parallel tool calls or separate sessions —
+ * can't clobber each other via a read-modify-write race. Mirrors appendEvent.
+ */
+function pendingPath(root: string): string {
+  return join(indexDir(root), 'pending.jsonl')
+}
+
 export function loadPending(root: string): PendingShard {
-  return loadShard<PendingShard>(root, 'pending') ?? { dirty: [], since: 0 }
+  let raw: string
+  try {
+    raw = readFileSync(pendingPath(root), 'utf8')
+  } catch {
+    return { dirty: [], since: 0 }
+  }
+  const set = new Set<string>()
+  let since = 0
+  for (const line of raw.split('\n')) {
+    const t = line.trim()
+    if (!t) continue
+    try {
+      const ev = JSON.parse(t) as { f?: unknown; ts?: unknown }
+      if (typeof ev.f !== 'string') continue
+      set.add(ev.f)
+      if (typeof ev.ts === 'number' && (since === 0 || ev.ts < since)) since = ev.ts
+    } catch {
+      // torn/corrupt line (e.g. interrupted append): skip silently
+    }
+  }
+  return { dirty: [...set], since }
 }
 
-/** Append dirty files (deduped) to pending.json. Used by the PostToolUse hook. */
+/** Append dirty files to the queue. One O_APPEND write keeps small lines atomic
+ *  across processes (no read-modify-write). Used by the PostToolUse hook. */
 export function appendPending(root: string, files: string[]): void {
-  const pending = loadPending(root)
-  const set = new Set(pending.dirty)
-  for (const f of files) set.add(f)
-  saveShard(root, 'pending', {
-    dirty: [...set],
-    since: pending.since || Math.floor(Date.now() / 1000),
-  } satisfies PendingShard)
+  if (files.length === 0) return
+  const path = pendingPath(root)
+  mkdirSync(dirname(path), { recursive: true })
+  const ts = Math.floor(Date.now() / 1000)
+  let buf = ''
+  for (const f of files) buf += `${JSON.stringify({ f, ts })}\n`
+  appendFileSync(path, buf)
 }
 
+/** Drop the whole queue (truncate). */
 export function clearPending(root: string): void {
-  saveShard(root, 'pending', { dirty: [], since: 0 } satisfies PendingShard)
+  try {
+    rmSync(pendingPath(root), { force: true })
+  } catch {
+    /* best-effort */
+  }
+}
+
+/**
+ * Remove only `processed` from the queue, preserving any files appended while a
+ * build was running — so a mid-build edit survives and still triggers
+ * respawnIfPending instead of going stale until its next mtime change.
+ */
+export function clearPendingSubset(root: string, processed: string[]): void {
+  if (processed.length === 0) return
+  const drop = new Set(processed)
+  const survivors = loadPending(root).dirty.filter((f) => !drop.has(f))
+  if (survivors.length === 0) {
+    clearPending(root)
+    return
+  }
+  const ts = Math.floor(Date.now() / 1000)
+  writeFileAtomic(pendingPath(root), `${survivors.map((f) => JSON.stringify({ f, ts })).join('\n')}\n`)
 }

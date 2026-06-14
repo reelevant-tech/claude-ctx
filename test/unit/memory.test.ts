@@ -16,6 +16,7 @@ import {
   bumpRead,
   loadState,
   markRelatedShown,
+  markSurfaced,
   markTestsReminded,
   recordEdit,
   recordIndexQuery,
@@ -110,6 +111,22 @@ describe('memory/state', () => {
     markRelatedShown(root, 's1', 'src/a.ts')
     const st = markRelatedShown(root, 's1', 'src/a.ts')
     expect(st.relatedShown).toEqual(['src/a.ts'])
+  })
+
+  it('a read of an index-surfaced file does not grow the cascade streak (①)', () => {
+    markSurfaced(root, 's1', ['src/surfaced.ts'])
+    // surfaced read: counted as a read, but neutral for the streak
+    const a = bumpRead(root, 's1', 'src/surfaced.ts')
+    expect(a.reads['src/surfaced.ts']).toBe(1)
+    expect(a.readStreak ?? 0).toBe(0)
+    // an unprompted read still grows it
+    expect(bumpRead(root, 's1', 'src/blind.ts').readStreak).toBe(1)
+  })
+
+  it('markSurfaced dedups and is FIFO-bounded', () => {
+    markSurfaced(root, 's1', ['a.ts', 'b.ts'])
+    const st = markSurfaced(root, 's1', ['a.ts', 'c.ts']) // a.ts re-surfaced → moves to end
+    expect(st.surfaced).toEqual(['b.ts', 'a.ts', 'c.ts'])
   })
 
   it('bumpRead caps reads at 500, evicting lowest count then oldest key', () => {

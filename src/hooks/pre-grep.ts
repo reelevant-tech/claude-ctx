@@ -1,4 +1,5 @@
 import { resolve } from 'node:path'
+import { loadConfig } from '../core/config'
 import { findRepoRoot } from '../core/paths'
 import type { HookInput, HookOutput } from '../core/types'
 import { searchPackContext } from './search-context'
@@ -6,6 +7,7 @@ import { searchPackContext } from './search-context'
 /** On a Grep/Glob, inject ranked indexed matches for the pattern; else nudge toward indexed lookups. */
 export async function handle(input: HookInput): Promise<HookOutput> {
   const root = findRepoRoot(input.cwd ?? process.cwd()).root
+  if (loadConfig(root).inject.shadow === true) return {} // observe-only: no steering
   const sid = input.session_id ?? 'unknown'
   const ti = input.tool_input ?? {}
   const path = typeof ti.path === 'string' ? ti.path : undefined

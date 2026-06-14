@@ -4,7 +4,7 @@ import { loadConfig } from '../config'
 import { splitIdentifier } from '../tokens'
 import { acquireLock, releaseLock } from '../store/lock'
 import {
-  clearPending,
+  clearPendingSubset,
   loadPending,
   loadShard,
   saveShard,
@@ -316,7 +316,8 @@ function writeShards(
   saveShard(root, 'calls', calls)
   saveShard(root, 'fieldaccess', fieldAccess)
   saveShard(root, 'meta', meta)
-  clearPending(root)
+  // NOTE: pending is cleared by the caller (set-difference on the processed
+  // snapshot) so edits that land mid-build aren't silently dropped.
 }
 
 /** Persist repo-level identity (one per repo, shared across branches). */
@@ -354,6 +355,7 @@ async function fullBuild(root: string, cfg: CtxConfig): Promise<IndexStats> {
     return { fileCount: 0, skippedCount: 0, symbolCount: 0, durationMs: 0, mode: 'noop' }
   }
   try {
+    const pendingAtStart = loadPending(root).dirty
     const scan = scanRepo(root, cfg)
     const { projectType, packages } = detectProject(root, scan.files)
 
@@ -423,6 +425,7 @@ async function fullBuild(root: string, cfg: CtxConfig): Promise<IndexStats> {
     writeShards(root, meta, filesShard, symbols, graph, git, commands, { trees, parsers: treeParsers }, { calls: callsByFile }, { fieldAccesses: fieldsByFile })
     writeRepoJson(root, meta)
     dropLegacyIndex(root)
+    clearPendingSubset(root, pendingAtStart)
     return {
       fileCount: records.size,
       skippedCount: skipped,
@@ -444,10 +447,11 @@ async function tryIncremental(root: string, cfg: CtxConfig, meta: IndexMeta): Pr
     return { fileCount: meta.fileCount, skippedCount: 0, symbolCount: 0, durationMs: 0, mode: 'noop' }
   }
   try {
+    const pendingAtStart = loadPending(root).dirty
     const scan = scanRepo(root, cfg)
     const scanByRel = new Map(scan.files.map((f) => [f.rel, f]))
     const old = filesShard.files
-    const pending = loadPending(root).dirty.filter((f) => scanByRel.has(f))
+    const pending = pendingAtStart.filter((f) => scanByRel.has(f))
 
     const changed: ScannedFile[] = []
     for (const sf of scan.files) {
@@ -459,9 +463,18 @@ async function tryIncremental(root: string, cfg: CtxConfig, meta: IndexMeta): Pr
     const deleted = Object.keys(old).filter((rel) => !scanByRel.has(rel))
 
     if (changed.length === 0 && deleted.length === 0) {
-      clearPending(root)
+      clearPendingSubset(root, pendingAtStart)
       return { fileCount: meta.fileCount, skippedCount: 0, symbolCount: 0, durationMs: Date.now() - started, mode: 'noop' }
     }
+
+    // Structural change: a file was added or removed. The incremental path only
+    // re-resolves edges *from* changed files, so an existing importer A of a new
+    // file B (or a dangling edge to a deleted file) would be missed until a full
+    // rebuild. Bail to fullBuild for adds/deletes; pure content edits stay
+    // incremental. (releaseLock runs in finally; respawnIfPending no-ops against
+    // the lock the in-process fullBuild then takes.)
+    const added = changed.some((sf) => old[sf.rel] === undefined)
+    if (added || deleted.length > 0) return null
 
     // Re-process changed files.
     const records = new Map<string, FileRecord>()
@@ -609,6 +622,7 @@ async function tryIncremental(root: string, cfg: CtxConfig, meta: IndexMeta): Pr
     const commands = extractCommands(root, meta.packages)
     writeShards(root, newMeta, { files: filesObj }, symbols, graph, git, commands, { trees, parsers: treeParsers }, { calls: callsByFile }, { fieldAccesses: fieldsByFile })
     writeRepoJson(root, newMeta)
+    clearPendingSubset(root, pendingAtStart)
     return {
       fileCount: records.size,
       skippedCount: scan.skippedCount,

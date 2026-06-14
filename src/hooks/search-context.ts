@@ -1,8 +1,9 @@
 import { loadConfig } from '../core/config'
 import { redactSecrets } from '../core/guard/redact'
-import { loadState } from '../core/memory/state'
+import { loadState, markSurfaced } from '../core/memory/state'
 import { buildPack } from '../core/router/pack'
 import { loadIndex } from '../core/store/shards'
+import type { LoadedIndex } from '../core/types'
 
 /**
  * Shared logic for turning a search (Grep/Glob tool, or a `grep`/`find`/`rg`
@@ -77,6 +78,24 @@ export function enumerationNudge(command: string): string | null {
   return isFind || isLsR || isTree ? ENUM_NUDGE : null
 }
 
+/** When the query is a single identifier matching an indexed symbol, return its
+ * definition line so the nudge *carries the answer* — the model rarely needs the
+ * grep or a follow-up symbol_search. Prefers exported defs. Signature redacted. */
+function symbolDefLine(q: string, idx: LoadedIndex): string | null {
+  const tok = q.trim()
+  if (!/^[A-Za-z_$][\w$]*$/.test(tok)) return null // single identifier only
+  const lower = tok.toLowerCase()
+  let best: (typeof idx.symbols.symbols)[number] | undefined
+  for (const s of idx.symbols.symbols) {
+    if (s.n.toLowerCase() !== lower) continue
+    if (!best || (s.x && !best.x)) best = s
+    if (best.x) break
+  }
+  if (!best) return null
+  const sig = best.sig ? ` — ${redactSecrets(best.sig).slice(0, 100)}` : ''
+  return `→ ${best.n} (${best.k}) ${best.f}:${best.l}${sig}`
+}
+
 /**
  * Build an injected "ranked indexed matches for this search" block, or null when
  * there is no usable query / no index / no matches.
@@ -99,12 +118,21 @@ export function searchPackContext(root: string, sessionId: string, rawQuery: str
   })
   if (pack.files.length === 0) return null
 
+  // reading these ranked files is "following the index", not a blind cascade
+  try {
+    markSurfaced(root, sessionId, pack.files.map((f) => f.path))
+  } catch {
+    /* memory is best-effort */
+  }
+
+  const def = symbolDefLine(q, idx)
   const files = pack.files
-    .slice(0, 6)
+    .slice(0, 4)
     .map((f) => `- ${f.path} — ${f.why.slice(0, 2).join('; ')}`)
     .join('\n')
   return (
     `[claude-ctx] Ranked indexed matches for "${q}" — start from these instead of the raw search output:\n` +
+    (def ? `${def}\n` : '') +
     `${files}\n` +
     `_Lexical rank; semantic/fuller: mcp__ctx__context_pack("${q}") · mcp__ctx__symbol_search_`
   )

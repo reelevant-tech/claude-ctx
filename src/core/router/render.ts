@@ -6,7 +6,16 @@ import type { ContextPack, LoadedIndex, RepoSummary } from '../types'
 const MORE_LINE =
   '_More (all mcp__ctx__*): context_pack · symbol_search · trace_symbol · symbol_body · call_chain · field_refs · references · related_files · dep_trace_'
 
-export function renderPack(pack: ContextPack): string {
+/**
+ * Render a context pack for injection. `compact` (used for medium-confidence
+ * packs) drops the heaviest, lowest-signal parts — code excerpts, the dep-link
+ * line, and the trailing tool footer — keeping only ranked files + key symbols.
+ * `toolFooter` (default true) prints the full mcp__ctx__* catalogue; callers pass
+ * false after the first injection of a session to avoid repeating it.
+ */
+export function renderPack(pack: ContextPack, opts?: { compact?: boolean; toolFooter?: boolean }): string {
+  const compact = opts?.compact ?? false
+  const toolFooter = opts?.toolFooter ?? true
   const lines: string[] = []
   const task = pack.task.length > 80 ? `${pack.task.slice(0, 77)}...` : pack.task
   lines.push(`## Repo context for: "${task}" (confidence: ${pack.confidence})`)
@@ -25,16 +34,18 @@ export function renderPack(pack: ContextPack): string {
   }
   const syms = pack.files.flatMap((f) => f.symbols).slice(0, 8)
   if (syms.length > 0) lines.push(`**Key symbols:** ${syms.join('; ')}`)
-  if (pack.depLinks.length > 0) lines.push(`**Deps:** ${pack.depLinks.join('; ')}`)
-  for (const ex of pack.excerpts) {
-    lines.push(`**Excerpt ${ex.path}:${ex.lines}:**`, '```', ex.text, '```')
+  if (!compact && pack.depLinks.length > 0) lines.push(`**Deps:** ${pack.depLinks.join('; ')}`)
+  if (!compact) {
+    for (const ex of pack.excerpts) {
+      lines.push(`**Excerpt ${ex.path}:${ex.lines}:**`, '```', ex.text, '```')
+    }
   }
   if (pack.missing !== undefined) lines.push(`**Missing:** ${pack.missing}`)
   if (pack.nextStep !== undefined) lines.push(`**Next:** ${pack.nextStep}`)
   if (pack.alreadyInspected.length > 0) {
     lines.push(`Already inspected: ${pack.alreadyInspected.join(', ')}`)
   }
-  lines.push(MORE_LINE)
+  if (!compact && toolFooter) lines.push(MORE_LINE)
   return lines.join('\n')
 }
 

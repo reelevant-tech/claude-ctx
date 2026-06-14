@@ -1,5 +1,33 @@
 import { describe, expect, it } from 'vitest'
-import { ALIAS_WEIGHT, expandTaskTokens, foldAccents, tokenizeTask } from '../../src/core/tokens'
+import {
+  ALIAS_WEIGHT,
+  expandTaskTokens,
+  foldAccents,
+  splitIdentifier,
+  tokenizeTask,
+} from '../../src/core/tokens'
+
+describe('splitIdentifier', () => {
+  it('splits camelCase into whole words (not characters)', () => {
+    expect(splitIdentifier('contextPack')).toEqual(['context', 'pack'])
+  })
+  it('splits PascalCase compounds', () => {
+    expect(splitIdentifier('UserPromptSubmit')).toEqual(['user', 'prompt', 'submit'])
+  })
+  it('splits snake_case / kebab and letter↔digit boundaries', () => {
+    expect(splitIdentifier('foo_bar-baz42')).toEqual(['foo', 'bar', 'baz', '42'])
+  })
+  it('splits acronym runs and digit boundaries (HTTPServer2Config)', () => {
+    expect(splitIdentifier('HTTPServer2Config')).toEqual(['http', 'server', '2', 'config'])
+  })
+  it('folds accents before splitting', () => {
+    expect(splitIdentifier('données_brutes')).toEqual(['donnees', 'brutes'])
+  })
+  it('returns an empty array for non-alphanumeric input', () => {
+    expect(splitIdentifier('___')).toEqual([])
+    expect(splitIdentifier('')).toEqual([])
+  })
+})
 
 describe('foldAccents', () => {
   it('strips French diacritics', () => {

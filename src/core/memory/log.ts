@@ -14,13 +14,8 @@ export function appendEvent(root: string, sessionId: string, ev: SessionEvent): 
   appendFileSync(join(dir, `${sanitize(sessionId)}.jsonl`), JSON.stringify(ev) + '\n')
 }
 
-export function readSession(root: string, sessionId: string): SessionEvent[] {
-  let raw: string
-  try {
-    raw = readFileSync(join(sessionsDir(root), `${sanitize(sessionId)}.jsonl`), 'utf8')
-  } catch {
-    return []
-  }
+/** Parse a raw `.jsonl` session log into events, skipping corrupt/torn lines. */
+export function parseSessionLog(raw: string): SessionEvent[] {
   const out: SessionEvent[] = []
   for (const line of raw.split('\n')) {
     const trimmed = line.trim()
@@ -33,6 +28,14 @@ export function readSession(root: string, sessionId: string): SessionEvent[] {
     }
   }
   return out
+}
+
+export function readSession(root: string, sessionId: string): SessionEvent[] {
+  try {
+    return parseSessionLog(readFileSync(join(sessionsDir(root), `${sanitize(sessionId)}.jsonl`), 'utf8'))
+  } catch {
+    return []
+  }
 }
 
 export function latestSessionId(root: string): string | null {

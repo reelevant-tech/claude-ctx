@@ -11,6 +11,7 @@ const RANK: Record<GuardTier, number> = { severe: 3, destructive: 2, inefficient
 export async function handle(input: HookInput): Promise<HookOutput> {
   const root = findRepoRoot(input.cwd ?? process.cwd()).root
   const cfg = loadConfig(root)
+  if (cfg.inject.shadow === true) return {} // observe-only: no steering, no guard
   const sid = input.session_id ?? 'unknown'
   const command = String(input.tool_input?.command ?? '')
   if (!command) return {}

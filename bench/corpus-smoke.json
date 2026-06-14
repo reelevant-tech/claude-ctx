@@ -1,0 +1,5 @@
+[
+  { "id": "mcp-tools", "prompt": "Where are the MCP tools registered and how many are there? List them." },
+  { "id": "pack-confidence", "prompt": "How is the confidence level (high/medium/low) of a context pack computed, and what does it gate?" },
+  { "id": "session-log", "prompt": "Where are per-session events written to disk, in what format, and what event kinds exist?" }
+]

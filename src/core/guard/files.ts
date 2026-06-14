@@ -79,6 +79,24 @@ function norm(p: string): string {
   return out.replace(/^\/+/, '')
 }
 
+/**
+ * Is this path a credentials/secret file? Shared by the edit guard and the read
+ * guard so both block the exact same set (record tag, known basenames, or the
+ * user's secretGlobs). Works with no index (record === null).
+ */
+export function isSecretTarget(relPath: string, record: FileRecord | null, cfg: CtxConfig): boolean {
+  const p = norm(relPath)
+  const base = posix.basename(p)
+  const extraSecret = cfg.secretGlobs.length > 0 ? picomatch(cfg.secretGlobs, { dot: true }) : null
+  return (
+    record?.kind === 'secret' ||
+    record?.risk.includes('secret') ||
+    isSecretBasename(base) ||
+    (extraSecret !== null && (extraSecret(p) || extraSecret(base))) ||
+    false
+  )
+}
+
 export function classifyEditTarget(
   relPath: string,
   record: FileRecord | null,
@@ -87,13 +105,7 @@ export function classifyEditTarget(
   const p = norm(relPath)
   const base = posix.basename(p)
 
-  const extraSecret = cfg.secretGlobs.length > 0 ? picomatch(cfg.secretGlobs, { dot: true }) : null
-  if (
-    record?.kind === 'secret' ||
-    record?.risk.includes('secret') ||
-    isSecretBasename(base) ||
-    (extraSecret !== null && (extraSecret(p) || extraSecret(base)))
-  ) {
+  if (isSecretTarget(relPath, record, cfg)) {
     return { tier: 'severe', rule: 'edit-secret', reason: 'credentials file' }
   }
 

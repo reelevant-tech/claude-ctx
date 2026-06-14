@@ -130,6 +130,25 @@ function bm25Idf(df: number, n: number): number {
   return Math.log(1 + (n - df + 0.5) / (df + 0.5))
 }
 
+// A token that matches a large share of the corpus carries little information —
+// an imperative like "run" (exported by every CLI command), a ubiquitous path
+// segment ("commands"), or a near-universal type name. BM25's always-positive
+// IDF still floors such a term near 0.7, enough for a verbose prompt ("walk
+// through the repository and run the commands") to float generic matches into
+// the pack. Taper a token's weight toward a floor once it appears in more than
+// GENERIC_LO of the corpus, reaching the floor by GENERIC_HI. Repo-adaptive (uses
+// the live df), so no hand-maintained per-language stopword list.
+const GENERIC_LO = 0.08
+const GENERIC_HI = 0.3
+const GENERIC_FLOOR = 0.12
+function genericDamp(df: number, n: number): number {
+  if (n <= 0) return 1
+  const ratio = df / n
+  if (ratio <= GENERIC_LO) return 1
+  if (ratio >= GENERIC_HI) return GENERIC_FLOOR
+  return 1 - ((ratio - GENERIC_LO) / (GENERIC_HI - GENERIC_LO)) * (1 - GENERIC_FLOOR)
+}
+
 interface Work {
   path: string
   rec: FileRecord
@@ -224,8 +243,8 @@ export function scoreFiles(
   }
 
   const avgdl = totalDocLen / N || 1
-  // per-token IDF × query weight (alias tokens carry reduced q)
-  const idfq = taskTokens.map((tt, i) => bm25Idf(df[i] ?? 0, N) * tt.q)
+  // per-token IDF × generic-token damp × query weight (alias tokens carry reduced q)
+  const idfq = taskTokens.map((tt, i) => bm25Idf(df[i] ?? 0, N) * genericDamp(df[i] ?? 0, N) * tt.q)
 
   // stage 1: BM25F lexical score per file
   interface Raw {

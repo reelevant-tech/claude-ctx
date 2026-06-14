@@ -387,6 +387,15 @@ export interface CtxConfig {
   inject: {
     sessionStart: boolean
     userPromptSubmit: boolean
+    /** only inject high-confidence packs in full; medium → compact; low → nothing.
+     * Default true. Set false to inject any non-empty pack (legacy behaviour). */
+    confidenceGate?: boolean
+    /** observe-only / shadow mode: every hook records events (tool token costs,
+     * pack decisions) but injects and steers NOTHING — no overview, pack, related
+     * context, grep interception, or guards. The clean A/B baseline: Claude
+     * behaves as if claude-ctx weren't there, yet the session is still measured.
+     * Default false. */
+    shadow?: boolean
   }
   guard: {
     bash: GuardMode
@@ -436,12 +445,24 @@ export interface CtxConfig {
 
 export type SessionEvent =
   | { ts: number; e: 'prompt'; text: string }
-  | { ts: number; e: 'read'; f: string }
+  | { ts: number; e: 'read'; f: string; tok?: number }
   | { ts: number; e: 'edit'; f: string; tool: string }
-  | { ts: number; e: 'bash'; cmd: string; exit?: number }
+  | { ts: number; e: 'bash'; cmd: string; exit?: number; outTok?: number }
   | { ts: number; e: 'note'; text: string; kind?: 'decision' | 'todo' | 'question' }
   | { ts: number; e: 'guard'; kind: 'deny' | 'ask' | 'warn'; target: string }
-  | { ts: number; e: 'mcp'; tool: string }
+  | { ts: number; e: 'mcp'; tool: string; outTok?: number }
+  // claude-ctx's own injection decisions — the audit trail for token accounting.
+  // `tok` = estimated tokens of the pack/overview; `injected` is false in shadow
+  // mode or when the confidence gate suppressed a weak pack.
+  | {
+      ts: number
+      e: 'pack'
+      confidence: 'high' | 'medium' | 'low'
+      files: string[]
+      tok: number
+      injected: boolean
+    }
+  | { ts: number; e: 'overview'; tok: number; injected: boolean }
 
 export interface SessionState {
   /** repo-relative path -> read count (LRU-capped at 500 entries) */
@@ -457,6 +478,10 @@ export interface SessionState {
   indexQueriedAt?: number
   /** files whose auto-expand "related" neighborhood was already injected */
   relatedShown?: string[]
+  /** files claude-ctx itself surfaced (ranked packs, related neighborhoods,
+   * search matches). Reading one of these is "following the index", so it must
+   * not count toward the read-cascade streak. FIFO-capped. */
+  surfaced?: string[]
 }
 
 export interface SessionSummaryEntry {
@@ -559,6 +584,9 @@ export interface HookInput {
   /** PreToolUse / PostToolUse */
   tool_name?: string
   tool_input?: Record<string, unknown>
+  /** PostToolUse result. Claude Code sends `tool_response`; some harnesses use
+   * `tool_output`. Read whichever is present (see `hookOutput` in post-tool). */
+  tool_response?: unknown
   tool_output?: unknown
   /** Stop */
   stop_hook_active?: boolean

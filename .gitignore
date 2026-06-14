@@ -4,3 +4,5 @@
 /coverage
 *.log
 .DS_Store
+# generated A/B benchmark run output (jsonl dumps); the harness in bench/ is tracked
+/bench/runs*/

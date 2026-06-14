@@ -6,6 +6,7 @@ import type { SessionState } from '../types'
 
 const MAX_READ_ENTRIES = 500
 const MAX_PROMPT_CHARS = 200
+const MAX_SURFACED = 300
 
 function sanitize(sessionId: string): string {
   return sessionId.replace(/[^a-zA-Z0-9_-]/g, '_')
@@ -34,6 +35,7 @@ export function loadState(root: string, sessionId: string): SessionState {
     if (typeof r.readStreak === 'number') st.readStreak = r.readStreak
     if (typeof r.indexQueriedAt === 'number') st.indexQueriedAt = r.indexQueriedAt
     if (Array.isArray(r.relatedShown)) st.relatedShown = r.relatedShown
+    if (Array.isArray(r.surfaced)) st.surfaced = r.surfaced
     return st
   } catch {
     return emptyState()
@@ -72,8 +74,26 @@ function capReads(reads: Record<string, number>): void {
 export function bumpRead(root: string, sessionId: string, rel: string): SessionState {
   const st = loadState(root, sessionId)
   st.reads[rel] = (st.reads[rel] ?? 0) + 1
-  st.readStreak = (st.readStreak ?? 0) + 1
+  // Reading a file claude-ctx itself surfaced (ranked pack, related, search hit)
+  // is "following the index" — don't let it drive the cascade nudge. Only
+  // unprompted file-by-file reads grow the streak.
+  if (!(st.surfaced ?? []).includes(rel)) st.readStreak = (st.readStreak ?? 0) + 1
   capReads(st.reads)
+  return touchAndSave(root, sessionId, st)
+}
+
+/** Record files claude-ctx surfaced to the model (so reading them is "targeted",
+ * not a blind cascade). FIFO-capped; newest kept. */
+export function markSurfaced(root: string, sessionId: string, rels: string[]): SessionState {
+  const st = loadState(root, sessionId)
+  if (!st.surfaced) st.surfaced = []
+  for (const rel of rels) {
+    if (!rel) continue
+    const at = st.surfaced.indexOf(rel)
+    if (at !== -1) st.surfaced.splice(at, 1)
+    st.surfaced.push(rel)
+  }
+  if (st.surfaced.length > MAX_SURFACED) st.surfaced = st.surfaced.slice(-MAX_SURFACED)
   return touchAndSave(root, sessionId, st)
 }
 

@@ -9,6 +9,7 @@ import type { FilesShard, HookInput, HookOutput } from '../core/types'
 export async function handle(input: HookInput): Promise<HookOutput> {
   const root = findRepoRoot(input.cwd ?? process.cwd()).root
   const cfg = loadConfig(root)
+  if (cfg.inject.shadow === true) return {} // observe-only: no steering, no guard
   if (cfg.guard.edits === 'off') return {}
 
   const fp = input.tool_input?.file_path

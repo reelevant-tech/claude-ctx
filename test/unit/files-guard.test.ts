@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_CONFIG } from '../../src/core/config'
-import { classifyEditTarget, readWarning } from '../../src/core/guard/files'
+import { classifyEditTarget, isSecretTarget, readWarning } from '../../src/core/guard/files'
 import type { FileRecord } from '../../src/core/types'
 
 function rec(over: Partial<FileRecord> = {}): FileRecord {
@@ -105,6 +105,22 @@ describe('classifyEditTarget', () => {
   it('returns null for plain source files', () => {
     expect(classifyEditTarget('src/app.ts', rec(), cfg)).toBeNull()
     expect(classifyEditTarget('src/billing/invoice.ts', null, cfg)).toBeNull()
+  })
+})
+
+describe('isSecretTarget', () => {
+  it('is true for secret basenames, records, and secretGlobs — the read guard shares this', () => {
+    expect(isSecretTarget('.env', null, cfg)).toBe(true)
+    expect(isSecretTarget('config/.env.local', null, cfg)).toBe(true)
+    expect(isSecretTarget('keys/server.pem', null, cfg)).toBe(true)
+    expect(isSecretTarget('config/creds.yaml', rec({ kind: 'secret' }), cfg)).toBe(true)
+    const c = { ...DEFAULT_CONFIG, secretGlobs: ['config/secrets/**'] }
+    expect(isSecretTarget('config/secrets/prod.yaml', null, c)).toBe(true)
+  })
+
+  it('is false for ordinary source files', () => {
+    expect(isSecretTarget('src/app.ts', rec(), cfg)).toBe(false)
+    expect(isSecretTarget('README.md', null, cfg)).toBe(false)
   })
 })
 

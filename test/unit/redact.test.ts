@@ -46,6 +46,57 @@ describe('redactSecrets', () => {
     expect(redactSecrets('xoxb-123456789012-abcdef')).toBe('[REDACTED]')
   })
 
+  it('redacts Stripe sk_live_/sk_test_ keys (underscore form)', () => {
+    expect(redactSecrets('key sk_live_abcdef1234567890ABCDEF end')).toBe('key [REDACTED] end')
+    expect(redactSecrets('rk_test_0123456789abcdef')).toBe('[REDACTED]')
+  })
+
+  it('redacts Google/GCP AIza API keys', () => {
+    const k = `AIza${'x'.repeat(35)}`
+    expect(redactSecrets(`gcp ${k} ok`)).toBe('gcp [REDACTED] ok')
+  })
+
+  it('redacts credentials in a connection URL, keeping scheme + host', () => {
+    expect(redactSecrets('postgres://user:pass@db.example.com:5432/app')).toBe(
+      'postgres://[REDACTED]@db.example.com:5432/app',
+    )
+    expect(redactSecrets('mongodb+srv://u:p@cluster0.mongodb.net/db')).toBe(
+      'mongodb+srv://[REDACTED]@cluster0.mongodb.net/db',
+    )
+  })
+
+  it('redacts basic-auth credentials in an https URL', () => {
+    expect(redactSecrets('curl https://admin:s3cr3tpass@api.example.com/v1')).toBe(
+      'curl https://[REDACTED]@api.example.com/v1',
+    )
+  })
+
+  it('redacts unquoted .env-style assignments (KEY=value at line start)', () => {
+    expect(redactSecrets('CLIENT_SECRET=a1b2c3d4e5f6g7')).toBe('CLIENT_SECRET=[REDACTED]')
+    expect(redactSecrets('client_secret=a1b2c3d4e5f6g7')).toBe('client_secret=[REDACTED]')
+    const env = 'GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789\nAWS_SECRET_ACCESS_KEY=wJalrXUtnFEMIabcd'
+    expect(redactSecrets(env)).toBe('GITHUB_TOKEN=[REDACTED]\nAWS_SECRET_ACCESS_KEY=[REDACTED]')
+  })
+
+  it('does not redact spaced source assignments (x = y), only dotenv KEY=value', () => {
+    const code = 'const sessionToken = getToken()'
+    expect(redactSecrets(code)).toBe(code)
+    const indented = '  const apiKey = config.apiKey'
+    expect(redactSecrets(indented)).toBe(indented)
+  })
+
+  it('is idempotent on the new formats', () => {
+    const text = [
+      'sk_live_abcdef1234567890ABCDEF',
+      'postgres://user:pass@db.example.com/app',
+      'API_TOKEN=a1b2c3d4e5f6g7',
+    ].join('\n')
+    const once = redactSecrets(text)
+    expect(redactSecrets(once)).toBe(once)
+    expect(once).not.toContain('sk_live_abcdef')
+    expect(once).not.toContain('user:pass')
+  })
+
   it('redacts JWTs', () => {
     const jwt =
       'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpM'
@@ -79,6 +130,19 @@ describe('redactSecrets', () => {
   it('keeps ordinary quoted strings', () => {
     const s = "msg = 'aaa bbb ccc ddd eee fff'"
     expect(redactSecrets(s)).toBe(s)
+  })
+
+  it('keeps long high-entropy English sentences (whitespace ⇒ prose, not a secret)', () => {
+    // regression: this real error string measures >4 bits/char but is plainly not a secret
+    const s = "process.stderr.write('Could not find built bundles (dist/hook.cjs). Run: npm run build')"
+    expect(redactSecrets(s)).toBe(s)
+    const desc = 'throw new Error("Failed to resolve the import specifier from the module graph cache")'
+    expect(redactSecrets(desc)).toBe(desc)
+  })
+
+  it('still redacts a contiguous high-entropy blob (no whitespace, non-keyword)', () => {
+    // 'blob' is not a KV keyword, so this exercises the entropy path, not KV_PATTERN
+    expect(redactSecrets("const blob = 'kJ8#mP2$vX9@qL4&wZ7!nQ5'")).toBe("const blob = '[REDACTED]'")
   })
 
   it('keeps ordinary code intact', () => {

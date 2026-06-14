@@ -1,8 +1,8 @@
 # claude-ctx
 
-A global, repo-agnostic **smart context + autonomous prompt-injection layer for Claude Code**. It builds a compact repository intelligence index (project type, packages, symbols, import/dependency graph, tests, git signals, risk classification, commands) and uses it to make Claude Code behave more like Cursor: it injects the right context at the right moment, routes a free-text task to the files that matter, and steers away from broad greps, repeated reads, and dangerous commands — without you typing anything.
+A global, repo-agnostic **codebase context router for Claude Code**. It builds a compact repository intelligence index (project type, packages, symbols, import/dependency graph, tests, git signals, risk classification, commands) and uses it to make Claude Code behave more like Cursor: it surfaces the right files at the right moment, routes a free-text task to the files that matter, and steers away from broad greps, repeated reads, and dangerous commands — automatically, before Claude starts working.
 
-Works on Node.js / TypeScript and Rust repos (and degrades gracefully elsewhere). Deterministic static analysis only — no embeddings, no network calls, no LLM in the loop.
+Works on Node.js / TypeScript and Rust repos (and degrades gracefully elsewhere). **Core mode is deterministic static analysis** — lexical + structural retrieval, no network, no LLM in the loop. An **optional** semantic mode adds local embeddings (one-time ~50 MB model download, then fully offline) and stays off the hook hot-path.
 
 ## How it works
 
@@ -63,6 +63,7 @@ Global flags: `--repo <path>` (default cwd, resolved to the git root), `--json`.
 | `ctx recent [--days --limit]` | recently changed files |
 | `ctx vectors ["<query>"]` | semantic index stats, or nearest symbol chunks |
 | `ctx eval <queries.json>` | benchmark retrieval: lexical vs hybrid vs vector, hit@k |
+| `ctx bench-session [<id>]` | session token accounting: read/grep/MCP/injected tokens, pack overlap, A/B `net_saved` |
 | `ctx risky <path>` | risk classification for a path |
 | `ctx commands` | detected project commands |
 | `ctx summary` | session memory summary |
@@ -133,7 +134,7 @@ Defaults live in code; override globally in `~/.claude-ctx/config.json` and per-
 {
   "packBudgetTokens": 1500,
   "overviewBudgetTokens": 700,
-  "inject": { "sessionStart": true, "userPromptSubmit": true },
+  "inject": { "sessionStart": true, "userPromptSubmit": true, "confidenceGate": true, "shadow": false },
   "guard": { "bash": "warn", "edits": "warn", "reads": "warn" }, // warn | enforce | off
   "riskyGlobs": [], "secretGlobs": [], "exclude": [],
   "maxFileSizeKb": 512, "maxFiles": 200000, "bgIndexThresholdFiles": 2000,
@@ -142,6 +143,8 @@ Defaults live in code; override globally in `~/.claude-ctx/config.json` and per-
 ```
 
 Guards are **warn-only by default** — they inject advisory context but never block. Set `guard.bash`/`guard.edits` to `"enforce"` to have severe commands denied and destructive ones prompted.
+
+`inject.confidenceGate` (default `true`) injects only **high**-confidence packs in full, **medium** packs compact (no excerpt/footer), and suppresses **low**-confidence ones — a weak pack costs tokens *and* can mislead. `inject.shadow` (default `false`) is **observe-only**: every hook records token costs and pack decisions but injects/steers nothing (no overview, pack, related-context, grep interception, or guards), so Claude behaves as if claude-ctx weren't installed while the session is still measured. It's the clean A/B baseline for `ctx bench-session` (see Benchmark.md).
 
 ## Safety
 
