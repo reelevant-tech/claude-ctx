@@ -23,23 +23,37 @@ net_saved = (read + bash_output)_baseline
 
 ## Run it
 
+Every task is a **real headless agent session billed to your account**, so the default
+driver is tuned for cost: **Haiku** model + a **hard per-task dollar cap**. The script
+prints the billed-session count and worst-case cost before it starts.
+
 ```bash
 npm run build && cp dist/*.cjs ~/.claude-ctx/bin/   # build AND reinstall (see note)
 
-# smoke test first (3 tasks, 1 run/arm, ~2-4 min) — confirms the loop works:
-CTX_BENCH_DRIVER="claude -p --dangerously-skip-permissions" \
-  bench/run-ab.sh bench/corpus-smoke.json 1
+# smoke first (3 tasks, 1 run/arm) — confirms the loop works, costs pennies on Haiku:
+bench/run-ab.sh bench/corpus-smoke.json 1
 
-# then the real run (16 tasks × 3 runs/arm):
-CTX_BENCH_DRIVER="claude -p --dangerously-skip-permissions" \
-  bench/run-ab.sh bench/corpus.json
+# the real run (16 tasks × 3 runs/arm), still on Haiku by default:
+bench/run-ab.sh bench/corpus.json
 ```
 
-**Why `--dangerously-skip-permissions`?** The corpus tasks need read-only tools
-(`Read`/`Grep`/`mcp__ctx__*`). In headless mode *without* it, `claude -p` blocks
-waiting for tool approval and the task hangs. The flag auto-allows tools — fine for a
-read-only corpus, but run on a throwaway checkout to be safe. (A trivial no-tool prompt
-like `claude -p "hi"` returns instantly either way — that's not a valid health check.)
+**Cost knobs** (the default is already the cheap path — only touch these to change it):
+
+| Env var | Default | Effect |
+|---|---|---|
+| `CTX_BENCH_MODEL` | `haiku` | model alias (`haiku`/`sonnet`/`opus`) or full id |
+| `CTX_BENCH_BUDGET_USD` | `0.50` | hard `--max-budget-usd` ceiling **per task** — claude aborts the task at the cap |
+| `CTX_BENCH_DRIVER` | _(unset)_ | overrides the whole command, ignoring the two knobs above |
+
+Worst-case spend = `tasks × runs × 2 arms × CTX_BENCH_BUDGET_USD`; real spend is far lower
+because few tasks hit the cap. To bench what a *real* (Opus/Sonnet) session would do, set
+`CTX_BENCH_MODEL=sonnet` — more faithful, more expensive. The routing effect the harness
+measures (Read/Bash/MCP tokens from the session logs) is logged the same way on any model.
+
+**Why `--dangerously-skip-permissions` (baked into the default driver)?** The corpus tasks
+need read-only tools (`Read`/`Grep`/`mcp__ctx__*`). In headless mode *without* it, `claude
+-p` blocks waiting for tool approval and the task hangs. The flag auto-allows tools — fine
+for a read-only corpus, but run on a throwaway checkout to be safe.
 
 Requires the `claude` CLI on PATH. The script snapshots your global
 `~/.claude-ctx/config.json`, toggles `inject.shadow` per arm, archives each arm's new
@@ -66,9 +80,10 @@ Inspect a single arm any time with `ctx bench-session --dir bench/runs/live`.
 - **Want to see what Claude does?** Drop the `>/dev/null 2>&1` on the driver line in
   `run-ab.sh` temporarily.
 
-> **Run on a throwaway checkout.** The corpus is read-only investigation tasks and
-> each prompt is prefixed with a "do not edit" instruction, but a headless agent can
-> still wander — don't point it at a tree you care about.
+> **Run on a throwaway checkout.** The corpus is read-only investigation tasks and a
+> "read-only, do not modify" instruction is passed via the **system** prompt (kept out
+> of the scored user message on purpose), but a headless agent can still wander —
+> don't point it at a tree you care about.
 
 ## Honest limits (state these with any number you publish)
 

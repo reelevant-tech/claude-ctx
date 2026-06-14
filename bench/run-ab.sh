@@ -26,10 +26,28 @@ REPO_ROOT="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
 CONFIG_DIR="${CLAUDE_CTX_HOME:-$HOME/.claude-ctx}"
 CONFIG="$CONFIG_DIR/config.json"
 CLI_JS="$REPO_ROOT/dist/cli.cjs"
-PROMPT_PREFIX="Investigate this repository and answer in prose only. Do NOT edit, create, or delete any files, and do not run destructive commands. Question: "
+# Safety + output framing lives in the SYSTEM prompt, NOT the scored user message.
+# The UserPromptSubmit hook tokenizes whatever the user types: a prose prefix like
+# "investigate this repository ... run the commands" injects generic tokens
+# (run/commands/repository/files) that collide with command files and deflate the
+# ranking the bench is trying to measure. Passing the bare question — with safety
+# appended to the system prompt — is both cleaner and closer to real usage.
+SAFETY_SYS="Read-only investigation: do not modify, create, or delete any files, and do not run destructive commands. Answer in prose."
 
-# How to run one headless Claude Code prompt. Overridable for testing.
-DRIVER="${CTX_BENCH_DRIVER:-claude -p}"
+# How to run one headless Claude Code prompt.
+#
+# Each task is a REAL headless agent session billed to your account, so the
+# default driver is tuned for COST, not fidelity:
+#   - a cheap model (Haiku) via CTX_BENCH_MODEL (default: haiku);
+#   - a hard per-task dollar ceiling via CTX_BENCH_BUDGET_USD (default: 0.50) so
+#     a runaway agent can't drain your quota — claude aborts the task at the cap;
+#   - --dangerously-skip-permissions so read-only tools don't wall on approval
+#     (the corpus is read-only and each prompt is prefixed "do not edit").
+# Override the whole command via CTX_BENCH_DRIVER, or tune the pieces.
+CTX_BENCH_MODEL="${CTX_BENCH_MODEL:-haiku}"
+CTX_BENCH_BUDGET_USD="${CTX_BENCH_BUDGET_USD:-0.50}"
+DEFAULT_DRIVER="claude -p --model $CTX_BENCH_MODEL --max-budget-usd $CTX_BENCH_BUDGET_USD --dangerously-skip-permissions"
+DRIVER="${CTX_BENCH_DRIVER:-$DEFAULT_DRIVER}"
 read -r -a DRIVER_ARR <<< "$DRIVER"
 
 if [ ! -f "$CLI_JS" ]; then
@@ -98,8 +116,16 @@ run_arm() { # $1 = arm name, $2 = shadow value
       echo "    [$arm r$r] $id" >&2
       # </dev/null is critical: this loop's stdin is the corpus pipe; without it
       # `claude` would read/wait on that stream and hang on the first task.
-      ( cd "$REPO_ROOT" && "${DRIVER_ARR[@]}" "$PROMPT_PREFIX$prompt" </dev/null ) >/dev/null 2>&1 \
-        || echo "    (task $id failed; continuing)" >&2
+      # Safety goes via --append-system-prompt so it isn't scored as part of the
+      # query. Only added for the default claude driver; an overridden
+      # CTX_BENCH_DRIVER owns its own argv (e.g. a mock for testing).
+      if [ -z "${CTX_BENCH_DRIVER:-}" ]; then
+        ( cd "$REPO_ROOT" && "${DRIVER_ARR[@]}" --append-system-prompt "$SAFETY_SYS" "$prompt" </dev/null ) >/dev/null 2>&1 \
+          || echo "    (task $id failed; continuing)" >&2
+      else
+        ( cd "$REPO_ROOT" && "${DRIVER_ARR[@]}" "$prompt" </dev/null ) >/dev/null 2>&1 \
+          || echo "    (task $id failed; continuing)" >&2
+      fi
     done < <(node -e '
       const fs = require("fs");
       for (const t of JSON.parse(fs.readFileSync(process.argv[1], "utf8")))
@@ -112,6 +138,17 @@ run_arm() { # $1 = arm name, $2 = shadow value
     done
   done
 }
+
+# Cost preamble: every task runs once per arm per run, so show the bill upfront.
+NTASKS="$(node -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).length))' "$CORPUS")"
+NSESS=$(( NTASKS * RUNS * 2 ))
+echo ">>> driver:   ${DRIVER}" >&2
+echo ">>> corpus:   $CORPUS ($NTASKS tasks) × $RUNS run(s) × 2 arms = $NSESS billed sessions" >&2
+if [ -n "${CTX_BENCH_DRIVER:-}" ]; then
+  echo ">>> NOTE: CTX_BENCH_DRIVER overrides the cheap default — mind the model/budget you chose." >&2
+else
+  echo ">>> cap:      ~\$$CTX_BENCH_BUDGET_USD/task hard ceiling ⇒ worst case ~\$$(node -e "process.stdout.write((($NSESS)*Number(process.argv[1])).toFixed(2))" "$CTX_BENCH_BUDGET_USD") total" >&2
+fi
 
 rm -rf "$OUT/shadow" "$OUT/live"
 run_arm shadow true
